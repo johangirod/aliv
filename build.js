@@ -8515,6 +8515,21 @@ var EasingFunctions = {
     // acceleration until halfway, then deceleration
     easeInOutQuint: function easeInOutQuint(t) {
         return t < .5 ? 16 * t * t * t * t * t : 1 + 16 * --t * t * t * t * t;
+    },
+    // bounce out effect
+    easeOutElastic: function easeOutElastic(t, b, c, d) {
+        var b = 0;
+        var d = 1;
+        var c = 1;
+        var s = 1.70158;
+        var p = 0;
+        var a = c;
+        if (t == 0) return b;
+        if ((t /= d) == 1) return b + c;if (!p) p = d * .3;
+        if (a < Math.abs(c)) {
+            a = c;var s = p / 4;
+        } else var s = p / (2 * Math.PI) * Math.asin(c / a);
+        return a * Math.pow(2, -10 * t) * Math.sin((t * d - s) * (2 * Math.PI) / p) + c + b;
     }
 };
 
@@ -8529,14 +8544,20 @@ var normalizedDistanceFrom = function normalizedDistanceFrom(element) {
 
         xElem += dx / 2;
         yElem += dy / 2;
-        return Math.sqrt(Math.pow((x - xElem) / (4 * dx), 2) + Math.pow((y - yElem) / (4 * dy), 2));
+        return Math.sqrt(Math.pow((x - xElem) / (3 * dx), 2) + Math.pow((y - yElem) / (3 * dy), 2));
     };
 };
 
-var radialGradient = function radialGradient(distance) {
-    var color = (0, _ramda.compose)((0, _ramda.join)(', '), (0, _ramda.repeat)(_ramda.__, 3), Math.round)(distance * 255);
-    console.log(color);
-    return '<radialGradient id="RadialGradient1" r="' + distance * 150 + '%">\n        <stop offset="0%" stop-color="rgba(0, 0, 0 ,0)"/>\n        <stop offset="100%" stop-color="rgba(0, 0, 0, 1}"/>\n    </radialGradient>';
+var gradient = function gradient(proximity) {
+    return '<radialGradient id="RadialGradient1" r="' + proximity * 100 + '%">\n        <stop offset="0%" stop-color="rgba(255, 255, 255, 0)"/>\n        <stop offset="100%" stop-color="rgba(255, 255, 255, 1)"/>\n    </radialGradient>';
+};
+
+var logo = function logo(proximity) {
+    var trans = proximity * 50;
+    document.getElementById('logo-1').setAttribute('transform', 'translate(' + -trans + ' ' + -trans + ')');
+    document.getElementById('logo-2').setAttribute('transform', 'translate(' + trans + ' ' + -trans + ') rotate(' + proximity * 90 + ' 100 100)');
+    document.getElementById('logo-3').setAttribute('transform', 'translate(' + trans + ' ' + trans + ') rotate(' + proximity * 180 + ' 100 100)');
+    document.getElementById('logo-4').setAttribute('transform', 'translate(' + -trans + ' ' + trans + ') rotate(' + -proximity * 90 + ' 100 100)');
 };
 
 var displayGradient = function displayGradient(template) {
@@ -8549,8 +8570,22 @@ var toCoordinate = function toCoordinate(_ref2) {
     return { x: x, y: y };
 };
 
-document.onmousemove = (0, _ramda.pipe)(toCoordinate, normalizedDistanceFrom(document.getElementById('logo')), (0, _ramda.min)(1), function (x) {
+var proximity = (0, _ramda.pipe)(toCoordinate, normalizedDistanceFrom(document.getElementById('logo')), function (x) {
+    return x;
+}, (0, _ramda.min)(1), function (x) {
     return 1 - x;
-}, EasingFunctions.easeInCubic, radialGradient, displayGradient);
+}, EasingFunctions.easeInCubic, EasingFunctions.easeOutElastic);
+
+var doParallel = function doParallel(f, g) {
+    return function (x) {
+        f(x);g(x);
+    };
+};
+
+document.onmousemove = (0, _ramda.pipe)(proximity, logo
+// doParallel(
+// compose(displayGradient, gradient),
+// )
+);
 
 },{"ramda":1}]},{},[2]);
