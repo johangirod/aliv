@@ -8544,12 +8544,8 @@ var normalizedDistanceFrom = function normalizedDistanceFrom(element) {
 
         xElem += dx / 2;
         yElem += dy / 2;
-        return Math.sqrt(Math.pow((x - xElem) / (3 * dx), 2) + Math.pow((y - yElem) / (3 * dy), 2));
+        return Math.sqrt(Math.pow((x - xElem) / (2 * dx), 2) + Math.pow((y - yElem) / (2 * dy), 2));
     };
-};
-
-var gradient = function gradient(proximity) {
-    return '<radialGradient id="RadialGradient1" r="' + proximity * 100 + '%">\n        <stop offset="0%" stop-color="rgba(255, 255, 255, 0)"/>\n        <stop offset="100%" stop-color="rgba(255, 255, 255, 1)"/>\n    </radialGradient>';
 };
 
 var logo = function logo(proximity) {
@@ -8571,10 +8567,12 @@ var toCoordinate = function toCoordinate(_ref2) {
 };
 
 var proximity = (0, _ramda.pipe)(toCoordinate, normalizedDistanceFrom(document.getElementById('logo')), function (x) {
-    return x;
-}, (0, _ramda.min)(1), function (x) {
+    return x - 0.2;
+}, (0, _ramda.min)(1), (0, _ramda.max)(0), function (x) {
     return 1 - x;
-}, EasingFunctions.easeInCubic, EasingFunctions.easeOutElastic);
+}, EasingFunctions.easeOutQuad
+// EasingFunctions.easeOutElastic
+);
 
 var doParallel = function doParallel(f, g) {
     return function (x) {

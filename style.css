@@ -44,4 +44,9 @@ html, body {
 
 .A-logo {
     fill: rgb(114, 143, 219);
+    transition: fill 0.2s;
+}
+
+.A-logo:hover {
+    fill: rgba(255,170,0,1);
 }

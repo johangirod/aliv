@@ -50,17 +50,8 @@ const normalizedDistanceFrom = (element) => ({ x, y }) => {
     let { offsetLeft: xElem, offsetTop: yElem } = element;
     xElem += dx / 2;
     yElem += dy / 2;
-    return Math.sqrt(Math.pow((x - xElem) / (3*dx), 2) + Math.pow((y - yElem) / (3*dy), 2))
+    return Math.sqrt(Math.pow((x - xElem) / (2*dx), 2) + Math.pow((y - yElem) / (2*dy), 2))
 }
-
-
-const gradient = (proximity) => {
-    return `<radialGradient id="RadialGradient1" r="${proximity*100}%">
-        <stop offset="0%" stop-color="rgba(255, 255, 255, 0)"/>
-        <stop offset="100%" stop-color="rgba(255, 255, 255, 1)"/>
-    </radialGradient>`;
-}
-
 
 const logo = (proximity) => {
     const trans = proximity * 50;
@@ -78,11 +69,12 @@ const toCoordinate = ({ pageX: x, pageY: y }) => ({ x, y })
 const proximity = pipe(
     toCoordinate,
     normalizedDistanceFrom(document.getElementById('logo')),
-    x => x,
+    x => x-0.2,
     min(1),
+    max(0),
     x => 1 - x,
-    EasingFunctions.easeInCubic,
-    EasingFunctions.easeOutElastic
+    EasingFunctions.easeOutQuad
+    // EasingFunctions.easeOutElastic
 )
 
 const doParallel = (f, g) => x => { f(x); g(x); }
