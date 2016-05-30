@@ -1,4 +1,1113 @@
 (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+/**
+ * Indicates that navigation was caused by a call to history.push.
+ */
+var PUSH = exports.PUSH = 'PUSH';
+
+/**
+ * Indicates that navigation was caused by a call to history.replace.
+ */
+var REPLACE = exports.REPLACE = 'REPLACE';
+
+/**
+ * Indicates that navigation was caused by some other action such
+ * as using a browser's back/forward buttons and/or manually manipulating
+ * the URL in a browser's location bar. This is the default.
+ *
+ * See https://developer.mozilla.org/en-US/docs/Web/API/WindowEventHandlers/onpopstate
+ * for more information.
+ */
+var POP = exports.POP = 'POP';
+},{}],2:[function(require,module,exports){
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) { arr2[i] = arr[i]; } return arr2; } else { return Array.from(arr); } }
+
+var loopAsync = exports.loopAsync = function loopAsync(turns, work, callback) {
+  var currentTurn = 0,
+      isDone = false;
+  var isSync = false,
+      hasNext = false,
+      doneArgs = void 0;
+
+  var done = function done() {
+    for (var _len = arguments.length, args = Array(_len), _key = 0; _key < _len; _key++) {
+      args[_key] = arguments[_key];
+    }
+
+    isDone = true;
+
+    if (isSync) {
+      // Iterate instead of recursing if possible.
+      doneArgs = args;
+      return;
+    }
+
+    callback.apply(undefined, args);
+  };
+
+  var next = function next() {
+    if (isDone) return;
+
+    hasNext = true;
+
+    if (isSync) return; // Iterate instead of recursing if possible.
+
+    isSync = true;
+
+    while (!isDone && currentTurn < turns && hasNext) {
+      hasNext = false;
+      work(currentTurn++, next, done);
+    }
+
+    isSync = false;
+
+    if (isDone) {
+      // This means the loop finished synchronously.
+      callback.apply(undefined, _toConsumableArray(doneArgs));
+      return;
+    }
+
+    if (currentTurn >= turns && hasNext) {
+      isDone = true;
+      callback();
+    }
+  };
+
+  next();
+};
+},{}],3:[function(require,module,exports){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.go = exports.replaceLocation = exports.pushLocation = exports.startListener = exports.getUserConfirmation = exports.getCurrentLocation = undefined;
+
+var _LocationUtils = require('./LocationUtils');
+
+var _DOMUtils = require('./DOMUtils');
+
+var _DOMStateStorage = require('./DOMStateStorage');
+
+var _PathUtils = require('./PathUtils');
+
+/* eslint-disable no-alert */
+
+
+var PopStateEvent = 'popstate';
+
+var _createLocation = function _createLocation(historyState) {
+  var key = historyState && historyState.key;
+
+  return (0, _LocationUtils.createLocation)({
+    pathname: window.location.pathname,
+    search: window.location.search,
+    hash: window.location.hash,
+    state: key ? (0, _DOMStateStorage.readState)(key) : undefined
+  }, undefined, key);
+};
+
+var getCurrentLocation = exports.getCurrentLocation = function getCurrentLocation() {
+  var historyState = void 0;
+  try {
+    historyState = window.history.state || {};
+  } catch (error) {
+    // IE 11 sometimes throws when accessing window.history.state
+    // See https://github.com/mjackson/history/pull/289
+    historyState = {};
+  }
+
+  return _createLocation(historyState);
+};
+
+var getUserConfirmation = exports.getUserConfirmation = function getUserConfirmation(message, callback) {
+  return callback(window.confirm(message));
+};
+
+var startListener = exports.startListener = function startListener(listener) {
+  var handlePopState = function handlePopState(event) {
+    if (event.state !== undefined) // Ignore extraneous popstate events in WebKit
+      listener(_createLocation(event.state));
+  };
+
+  (0, _DOMUtils.addEventListener)(window, PopStateEvent, handlePopState);
+
+  return function () {
+    return (0, _DOMUtils.removeEventListener)(window, PopStateEvent, handlePopState);
+  };
+};
+
+var updateLocation = function updateLocation(location, updateState) {
+  var state = location.state;
+  var key = location.key;
+
+
+  if (state !== undefined) (0, _DOMStateStorage.saveState)(key, state);
+
+  updateState({ key: key }, (0, _PathUtils.createPath)(location));
+};
+
+var pushLocation = exports.pushLocation = function pushLocation(location) {
+  return updateLocation(location, function (state, path) {
+    return window.history.pushState(state, null, path);
+  });
+};
+
+var replaceLocation = exports.replaceLocation = function replaceLocation(location) {
+  return updateLocation(location, function (state, path) {
+    return window.history.replaceState(state, null, path);
+  });
+};
+
+var go = exports.go = function go(n) {
+  if (n) window.history.go(n);
+};
+},{"./DOMStateStorage":4,"./DOMUtils":5,"./LocationUtils":8,"./PathUtils":9}],4:[function(require,module,exports){
+(function (process){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.readState = exports.saveState = undefined;
+
+var _warning = require('warning');
+
+var _warning2 = _interopRequireDefault(_warning);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+var QuotaExceededErrors = ['QuotaExceededError', 'QUOTA_EXCEEDED_ERR']; /* eslint-disable no-empty */
+
+
+var SecurityError = 'SecurityError';
+var KeyPrefix = '@@History/';
+
+var createKey = function createKey(key) {
+  return KeyPrefix + key;
+};
+
+var saveState = exports.saveState = function saveState(key, state) {
+  if (!window.sessionStorage) {
+    // Session storage is not available or hidden.
+    // sessionStorage is undefined in Internet Explorer when served via file protocol.
+    process.env.NODE_ENV !== 'production' ? (0, _warning2.default)(false, '[history] Unable to save state; sessionStorage is not available') : void 0;
+    return;
+  }
+
+  try {
+    if (state == null) {
+      window.sessionStorage.removeItem(createKey(key));
+    } else {
+      window.sessionStorage.setItem(createKey(key), JSON.stringify(state));
+    }
+  } catch (error) {
+    if (error.name === SecurityError) {
+      // Blocking cookies in Chrome/Firefox/Safari throws SecurityError on any
+      // attempt to access window.sessionStorage.
+      process.env.NODE_ENV !== 'production' ? (0, _warning2.default)(false, '[history] Unable to save state; sessionStorage is not available due to security settings') : void 0;
+
+      return;
+    }
+
+    if (QuotaExceededErrors.indexOf(error.name) >= 0 && window.sessionStorage.length === 0) {
+      // Safari "private mode" throws QuotaExceededError.
+      process.env.NODE_ENV !== 'production' ? (0, _warning2.default)(false, '[history] Unable to save state; sessionStorage is not available in Safari private mode') : void 0;
+
+      return;
+    }
+
+    throw error;
+  }
+};
+
+var readState = exports.readState = function readState(key) {
+  var json = void 0;
+  try {
+    json = window.sessionStorage.getItem(createKey(key));
+  } catch (error) {
+    if (error.name === SecurityError) {
+      // Blocking cookies in Chrome/Firefox/Safari throws SecurityError on any
+      // attempt to access window.sessionStorage.
+      process.env.NODE_ENV !== 'production' ? (0, _warning2.default)(false, '[history] Unable to read state; sessionStorage is not available due to security settings') : void 0;
+
+      return undefined;
+    }
+  }
+
+  if (json) {
+    try {
+      return JSON.parse(json);
+    } catch (error) {
+      // Ignore invalid JSON.
+    }
+  }
+
+  return undefined;
+};
+}).call(this,require('_process'))
+},{"_process":14,"warning":17}],5:[function(require,module,exports){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+var addEventListener = exports.addEventListener = function addEventListener(node, event, listener) {
+  return node.addEventListener ? node.addEventListener(event, listener, false) : node.attachEvent('on' + event, listener);
+};
+
+var removeEventListener = exports.removeEventListener = function removeEventListener(node, event, listener) {
+  return node.removeEventListener ? node.removeEventListener(event, listener, false) : node.detachEvent('on' + event, listener);
+};
+
+/**
+ * Returns true if the HTML5 history API is supported. Taken from Modernizr.
+ *
+ * https://github.com/Modernizr/Modernizr/blob/master/LICENSE
+ * https://github.com/Modernizr/Modernizr/blob/master/feature-detects/history.js
+ * changed to avoid false negatives for Windows Phones: https://github.com/reactjs/react-router/issues/586
+ */
+var supportsHistory = exports.supportsHistory = function supportsHistory() {
+  var ua = window.navigator.userAgent;
+
+  if ((ua.indexOf('Android 2.') !== -1 || ua.indexOf('Android 4.0') !== -1) && ua.indexOf('Mobile Safari') !== -1 && ua.indexOf('Chrome') === -1 && ua.indexOf('Windows Phone') === -1) return false;
+
+  return window.history && 'pushState' in window.history;
+};
+
+/**
+ * Returns false if using go(n) with hash history causes a full page reload.
+ */
+var supportsGoWithoutReloadUsingHash = exports.supportsGoWithoutReloadUsingHash = function supportsGoWithoutReloadUsingHash() {
+  return window.navigator.userAgent.indexOf('Firefox') === -1;
+};
+},{}],6:[function(require,module,exports){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+var canUseDOM = exports.canUseDOM = !!(typeof window !== 'undefined' && window.document && window.document.createElement);
+},{}],7:[function(require,module,exports){
+(function (process){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.replaceLocation = exports.pushLocation = exports.startListener = exports.getCurrentLocation = exports.go = exports.getUserConfirmation = undefined;
+
+var _BrowserProtocol = require('./BrowserProtocol');
+
+Object.defineProperty(exports, 'getUserConfirmation', {
+  enumerable: true,
+  get: function get() {
+    return _BrowserProtocol.getUserConfirmation;
+  }
+});
+Object.defineProperty(exports, 'go', {
+  enumerable: true,
+  get: function get() {
+    return _BrowserProtocol.go;
+  }
+});
+
+var _warning = require('warning');
+
+var _warning2 = _interopRequireDefault(_warning);
+
+var _LocationUtils = require('./LocationUtils');
+
+var _DOMUtils = require('./DOMUtils');
+
+var _DOMStateStorage = require('./DOMStateStorage');
+
+var _PathUtils = require('./PathUtils');
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+var HashChangeEvent = 'hashchange';
+
+var getHashPath = function getHashPath() {
+  // We can't use window.location.hash here because it's not
+  // consistent across browsers - Firefox will pre-decode it!
+  var href = window.location.href;
+  var index = href.indexOf('#');
+  return index === -1 ? '' : href.substring(index + 1);
+};
+
+var pushHashPath = function pushHashPath(path) {
+  return window.location.hash = path;
+};
+
+var replaceHashPath = function replaceHashPath(path) {
+  var i = window.location.href.indexOf('#');
+
+  window.location.replace(window.location.href.slice(0, i >= 0 ? i : 0) + '#' + path);
+};
+
+var ensureSlash = function ensureSlash() {
+  var path = getHashPath();
+
+  if ((0, _PathUtils.isAbsolutePath)(path)) return true;
+
+  replaceHashPath('/' + path);
+
+  return false;
+};
+
+var getCurrentLocation = exports.getCurrentLocation = function getCurrentLocation(queryKey) {
+  var path = getHashPath();
+  var key = (0, _PathUtils.getQueryStringValueFromPath)(path, queryKey);
+
+  var state = void 0;
+  if (key) {
+    path = (0, _PathUtils.stripQueryStringValueFromPath)(path, queryKey);
+    state = (0, _DOMStateStorage.readState)(key);
+  }
+
+  var init = (0, _PathUtils.parsePath)(path);
+  init.state = state;
+
+  return (0, _LocationUtils.createLocation)(init, undefined, key);
+};
+
+var prevLocation = void 0;
+
+var startListener = exports.startListener = function startListener(listener, queryKey) {
+  var handleHashChange = function handleHashChange() {
+    if (!ensureSlash()) return; // Hash path must always begin with a /
+
+    var currentLocation = getCurrentLocation(queryKey);
+
+    if (prevLocation && currentLocation.key && prevLocation.key === currentLocation.key) return; // Ignore extraneous hashchange events
+
+    prevLocation = currentLocation;
+
+    listener(currentLocation);
+  };
+
+  ensureSlash();
+  (0, _DOMUtils.addEventListener)(window, HashChangeEvent, handleHashChange);
+
+  return function () {
+    return (0, _DOMUtils.removeEventListener)(window, HashChangeEvent, handleHashChange);
+  };
+};
+
+var updateLocation = function updateLocation(location, queryKey, updateHash) {
+  var state = location.state;
+  var key = location.key;
+
+  var path = (0, _PathUtils.createPath)(location);
+
+  if (state !== undefined) {
+    path = (0, _PathUtils.addQueryStringValueToPath)(path, queryKey, key);
+    (0, _DOMStateStorage.saveState)(key, state);
+  }
+
+  prevLocation = location;
+
+  updateHash(path);
+};
+
+var pushLocation = exports.pushLocation = function pushLocation(location, queryKey) {
+  return updateLocation(location, queryKey, function (path) {
+    if (getHashPath() !== path) {
+      pushHashPath(path);
+    } else {
+      process.env.NODE_ENV !== 'production' ? (0, _warning2.default)(false, 'You cannot PUSH the same path using hash history') : void 0;
+    }
+  });
+};
+
+var replaceLocation = exports.replaceLocation = function replaceLocation(location, queryKey) {
+  return updateLocation(location, queryKey, function (path) {
+    if (getHashPath() !== path) replaceHashPath(path);
+  });
+};
+}).call(this,require('_process'))
+},{"./BrowserProtocol":3,"./DOMStateStorage":4,"./DOMUtils":5,"./LocationUtils":8,"./PathUtils":9,"_process":14,"warning":17}],8:[function(require,module,exports){
+(function (process){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.locationsAreEqual = exports.statesAreEqual = exports.createLocation = exports.createQuery = undefined;
+
+var _typeof = typeof Symbol === "function" && typeof Symbol.iterator === "symbol" ? function (obj) { return typeof obj; } : function (obj) { return obj && typeof Symbol === "function" && obj.constructor === Symbol ? "symbol" : typeof obj; };
+
+var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
+var _invariant = require('invariant');
+
+var _invariant2 = _interopRequireDefault(_invariant);
+
+var _PathUtils = require('./PathUtils');
+
+var _Actions = require('./Actions');
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+var createQuery = exports.createQuery = function createQuery(props) {
+  return _extends(Object.create(null), props);
+};
+
+var createLocation = exports.createLocation = function createLocation() {
+  var input = arguments.length <= 0 || arguments[0] === undefined ? '/' : arguments[0];
+  var action = arguments.length <= 1 || arguments[1] === undefined ? _Actions.POP : arguments[1];
+  var key = arguments.length <= 2 || arguments[2] === undefined ? null : arguments[2];
+
+  var object = typeof input === 'string' ? (0, _PathUtils.parsePath)(input) : input;
+
+  var pathname = object.pathname || '/';
+  var search = object.search || '';
+  var hash = object.hash || '';
+  var state = object.state;
+
+  return {
+    pathname: pathname,
+    search: search,
+    hash: hash,
+    state: state,
+    action: action,
+    key: key
+  };
+};
+
+var isDate = function isDate(object) {
+  return Object.prototype.toString.call(object) === '[object Date]';
+};
+
+var statesAreEqual = exports.statesAreEqual = function statesAreEqual(a, b) {
+  if (a === b) return true;
+
+  var typeofA = typeof a === 'undefined' ? 'undefined' : _typeof(a);
+  var typeofB = typeof b === 'undefined' ? 'undefined' : _typeof(b);
+
+  if (typeofA !== typeofB) return false;
+
+  !(typeofA !== 'function') ? process.env.NODE_ENV !== 'production' ? (0, _invariant2.default)(false, 'You must not store functions in location state') : (0, _invariant2.default)(false) : void 0;
+
+  // Not the same object, but same type.
+  if (typeofA === 'object') {
+    !!(isDate(a) && isDate(b)) ? process.env.NODE_ENV !== 'production' ? (0, _invariant2.default)(false, 'You must not store Date objects in location state') : (0, _invariant2.default)(false) : void 0;
+
+    if (!Array.isArray(a)) return Object.keys(a).every(function (key) {
+      return statesAreEqual(a[key], b[key]);
+    });
+
+    return Array.isArray(b) && a.length === b.length && a.every(function (item, index) {
+      return statesAreEqual(item, b[index]);
+    });
+  }
+
+  // All other serializable types (string, number, boolean)
+  // should be strict equal.
+  return false;
+};
+
+var locationsAreEqual = exports.locationsAreEqual = function locationsAreEqual(a, b) {
+  return a.key === b.key &&
+  // a.action === b.action && // Different action !== location change.
+  a.pathname === b.pathname && a.search === b.search && a.hash === b.hash && statesAreEqual(a.state, b.state);
+};
+}).call(this,require('_process'))
+},{"./Actions":1,"./PathUtils":9,"_process":14,"invariant":13}],9:[function(require,module,exports){
+(function (process){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.createPath = exports.parsePath = exports.getQueryStringValueFromPath = exports.stripQueryStringValueFromPath = exports.addQueryStringValueToPath = exports.isAbsolutePath = undefined;
+
+var _warning = require('warning');
+
+var _warning2 = _interopRequireDefault(_warning);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+var isAbsolutePath = exports.isAbsolutePath = function isAbsolutePath(path) {
+  return typeof path === 'string' && path.charAt(0) === '/';
+};
+
+var addQueryStringValueToPath = exports.addQueryStringValueToPath = function addQueryStringValueToPath(path, key, value) {
+  var _parsePath = parsePath(path);
+
+  var pathname = _parsePath.pathname;
+  var search = _parsePath.search;
+  var hash = _parsePath.hash;
+
+
+  return createPath({
+    pathname: pathname,
+    search: search + (search.indexOf('?') === -1 ? '?' : '&') + key + '=' + value,
+    hash: hash
+  });
+};
+
+var stripQueryStringValueFromPath = exports.stripQueryStringValueFromPath = function stripQueryStringValueFromPath(path, key) {
+  var _parsePath2 = parsePath(path);
+
+  var pathname = _parsePath2.pathname;
+  var search = _parsePath2.search;
+  var hash = _parsePath2.hash;
+
+
+  return createPath({
+    pathname: pathname,
+    search: search.replace(new RegExp('([?&])' + key + '=[a-zA-Z0-9]+(&?)'), function (match, prefix, suffix) {
+      return prefix === '?' ? prefix : suffix;
+    }),
+    hash: hash
+  });
+};
+
+var getQueryStringValueFromPath = exports.getQueryStringValueFromPath = function getQueryStringValueFromPath(path, key) {
+  var _parsePath3 = parsePath(path);
+
+  var search = _parsePath3.search;
+
+  var match = search.match(new RegExp('[?&]' + key + '=([a-zA-Z0-9]+)'));
+  return match && match[1];
+};
+
+var extractPath = function extractPath(string) {
+  var match = string.match(/^(https?:)?\/\/[^\/]*/);
+  return match == null ? string : string.substring(match[0].length);
+};
+
+var parsePath = exports.parsePath = function parsePath(path) {
+  var pathname = extractPath(path);
+  var search = '';
+  var hash = '';
+
+  process.env.NODE_ENV !== 'production' ? (0, _warning2.default)(path === pathname, 'A path must be pathname + search + hash only, not a full URL like "%s"', path) : void 0;
+
+  var hashIndex = pathname.indexOf('#');
+  if (hashIndex !== -1) {
+    hash = pathname.substring(hashIndex);
+    pathname = pathname.substring(0, hashIndex);
+  }
+
+  var searchIndex = pathname.indexOf('?');
+  if (searchIndex !== -1) {
+    search = pathname.substring(searchIndex);
+    pathname = pathname.substring(0, searchIndex);
+  }
+
+  if (pathname === '') pathname = '/';
+
+  return {
+    pathname: pathname,
+    search: search,
+    hash: hash
+  };
+};
+
+var createPath = exports.createPath = function createPath(location) {
+  if (location == null || typeof location === 'string') return location;
+
+  var basename = location.basename;
+  var pathname = location.pathname;
+  var search = location.search;
+  var hash = location.hash;
+
+  var path = (basename || '') + pathname;
+
+  if (search && search !== '?') path += search;
+
+  if (hash) path += hash;
+
+  return path;
+};
+}).call(this,require('_process'))
+},{"_process":14,"warning":17}],10:[function(require,module,exports){
+(function (process){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _extends = Object.assign || function (target) { for (var i = 1; i < arguments.length; i++) { var source = arguments[i]; for (var key in source) { if (Object.prototype.hasOwnProperty.call(source, key)) { target[key] = source[key]; } } } return target; };
+
+var _warning = require('warning');
+
+var _warning2 = _interopRequireDefault(_warning);
+
+var _invariant = require('invariant');
+
+var _invariant2 = _interopRequireDefault(_invariant);
+
+var _ExecutionEnvironment = require('./ExecutionEnvironment');
+
+var _DOMUtils = require('./DOMUtils');
+
+var _HashProtocol = require('./HashProtocol');
+
+var HashProtocol = _interopRequireWildcard(_HashProtocol);
+
+var _createHistory = require('./createHistory');
+
+var _createHistory2 = _interopRequireDefault(_createHistory);
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } else { var newObj = {}; if (obj != null) { for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) newObj[key] = obj[key]; } } newObj.default = obj; return newObj; } }
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+var DefaultQueryKey = '_k';
+
+var createHashHistory = function createHashHistory() {
+  var options = arguments.length <= 0 || arguments[0] === undefined ? {} : arguments[0];
+
+  !_ExecutionEnvironment.canUseDOM ? process.env.NODE_ENV !== 'production' ? (0, _invariant2.default)(false, 'Hash history needs a DOM') : (0, _invariant2.default)(false) : void 0;
+
+  var queryKey = options.queryKey;
+
+
+  process.env.NODE_ENV !== 'production' ? (0, _warning2.default)(queryKey !== false, 'Using { queryKey: false } no longer works. Instead, just don\'t ' + 'use location state if you don\'t want a key in your URL query string') : void 0;
+
+  if (typeof queryKey !== 'string') queryKey = DefaultQueryKey;
+
+  var getUserConfirmation = HashProtocol.getUserConfirmation;
+
+
+  var getCurrentLocation = function getCurrentLocation() {
+    return HashProtocol.getCurrentLocation(queryKey);
+  };
+
+  var pushLocation = function pushLocation(location) {
+    return HashProtocol.pushLocation(location, queryKey);
+  };
+
+  var replaceLocation = function replaceLocation(location) {
+    return HashProtocol.replaceLocation(location, queryKey);
+  };
+
+  var history = (0, _createHistory2.default)(_extends({
+    getUserConfirmation: getUserConfirmation }, options, {
+    getCurrentLocation: getCurrentLocation,
+    pushLocation: pushLocation,
+    replaceLocation: replaceLocation,
+    go: HashProtocol.go
+  }));
+
+  var listenerCount = 0,
+      stopListener = void 0;
+
+  var startListener = function startListener(listener, before) {
+    if (++listenerCount === 1) stopListener = HashProtocol.startListener(history.transitionTo, queryKey);
+
+    var unlisten = before ? history.listenBefore(listener) : history.listen(listener);
+
+    return function () {
+      unlisten();
+
+      if (--listenerCount === 0) stopListener();
+    };
+  };
+
+  var listenBefore = function listenBefore(listener) {
+    return startListener(listener, true);
+  };
+
+  var listen = function listen(listener) {
+    return startListener(listener, false);
+  };
+
+  var goIsSupportedWithoutReload = (0, _DOMUtils.supportsGoWithoutReloadUsingHash)();
+
+  var go = function go(n) {
+    process.env.NODE_ENV !== 'production' ? (0, _warning2.default)(goIsSupportedWithoutReload, 'Hash history go(n) causes a full page reload in this browser') : void 0;
+
+    history.go(n);
+  };
+
+  var createHref = function createHref(path) {
+    return '#' + history.createHref(path);
+  };
+
+  return _extends({}, history, {
+    listenBefore: listenBefore,
+    listen: listen,
+    go: go,
+    createHref: createHref
+  });
+};
+
+exports.default = createHashHistory;
+}).call(this,require('_process'))
+},{"./DOMUtils":5,"./ExecutionEnvironment":6,"./HashProtocol":7,"./createHistory":11,"_process":14,"invariant":13,"warning":17}],11:[function(require,module,exports){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _AsyncUtils = require('./AsyncUtils');
+
+var _PathUtils = require('./PathUtils');
+
+var _runTransitionHook = require('./runTransitionHook');
+
+var _runTransitionHook2 = _interopRequireDefault(_runTransitionHook);
+
+var _Actions = require('./Actions');
+
+var _LocationUtils = require('./LocationUtils');
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) { arr2[i] = arr[i]; } return arr2; } else { return Array.from(arr); } }
+
+var createHistory = function createHistory() {
+  var options = arguments.length <= 0 || arguments[0] === undefined ? {} : arguments[0];
+  var getCurrentLocation = options.getCurrentLocation;
+  var getUserConfirmation = options.getUserConfirmation;
+  var pushLocation = options.pushLocation;
+  var replaceLocation = options.replaceLocation;
+  var go = options.go;
+  var keyLength = options.keyLength;
+
+
+  var currentLocation = void 0;
+  var pendingLocation = void 0;
+  var beforeListeners = [];
+  var listeners = [];
+  var allKeys = [];
+
+  var getCurrentIndex = function getCurrentIndex() {
+    if (pendingLocation && pendingLocation.action === _Actions.POP) return allKeys.indexOf(pendingLocation.key);
+
+    if (currentLocation) return allKeys.indexOf(currentLocation.key);
+
+    return -1;
+  };
+
+  var updateLocation = function updateLocation(nextLocation) {
+    currentLocation = nextLocation;
+
+    var currentIndex = getCurrentIndex();
+
+    if (currentLocation.action === _Actions.PUSH) {
+      allKeys = [].concat(_toConsumableArray(allKeys.slice(0, currentIndex + 1)), [currentLocation.key]);
+    } else if (currentLocation.action === _Actions.REPLACE) {
+      allKeys[currentIndex] = currentLocation.key;
+    }
+
+    listeners.forEach(function (listener) {
+      return listener(currentLocation);
+    });
+  };
+
+  var listenBefore = function listenBefore(listener) {
+    beforeListeners.push(listener);
+
+    return function () {
+      return beforeListeners = beforeListeners.filter(function (item) {
+        return item !== listener;
+      });
+    };
+  };
+
+  var listen = function listen(listener) {
+    listeners.push(listener);
+
+    return function () {
+      return listeners = listeners.filter(function (item) {
+        return item !== listener;
+      });
+    };
+  };
+
+  var confirmTransitionTo = function confirmTransitionTo(location, callback) {
+    (0, _AsyncUtils.loopAsync)(beforeListeners.length, function (index, next, done) {
+      (0, _runTransitionHook2.default)(beforeListeners[index], location, function (result) {
+        return result != null ? done(result) : next();
+      });
+    }, function (message) {
+      if (getUserConfirmation && typeof message === 'string') {
+        getUserConfirmation(message, function (ok) {
+          return callback(ok !== false);
+        });
+      } else {
+        callback(message !== false);
+      }
+    });
+  };
+
+  var transitionTo = function transitionTo(nextLocation) {
+    if (currentLocation && (0, _LocationUtils.locationsAreEqual)(currentLocation, nextLocation) || pendingLocation && (0, _LocationUtils.locationsAreEqual)(pendingLocation, nextLocation)) return; // Nothing to do
+
+    pendingLocation = nextLocation;
+
+    confirmTransitionTo(nextLocation, function (ok) {
+      if (pendingLocation !== nextLocation) return; // Transition was interrupted during confirmation
+
+      pendingLocation = null;
+
+      if (ok) {
+        // Treat PUSH to same path like REPLACE to be consistent with browsers
+        if (nextLocation.action === _Actions.PUSH) {
+          var prevPath = (0, _PathUtils.createPath)(currentLocation);
+          var nextPath = (0, _PathUtils.createPath)(nextLocation);
+
+          if (nextPath === prevPath && (0, _LocationUtils.statesAreEqual)(currentLocation.state, nextLocation.state)) nextLocation.action = _Actions.REPLACE;
+        }
+
+        if (nextLocation.action === _Actions.POP) {
+          updateLocation(nextLocation);
+        } else if (nextLocation.action === _Actions.PUSH) {
+          if (pushLocation(nextLocation) !== false) updateLocation(nextLocation);
+        } else if (nextLocation.action === _Actions.REPLACE) {
+          if (replaceLocation(nextLocation) !== false) updateLocation(nextLocation);
+        }
+      } else if (currentLocation && nextLocation.action === _Actions.POP) {
+        var prevIndex = allKeys.indexOf(currentLocation.key);
+        var nextIndex = allKeys.indexOf(nextLocation.key);
+
+        if (prevIndex !== -1 && nextIndex !== -1) go(prevIndex - nextIndex); // Restore the URL
+      }
+    });
+  };
+
+  var push = function push(input) {
+    return transitionTo(createLocation(input, _Actions.PUSH));
+  };
+
+  var replace = function replace(input) {
+    return transitionTo(createLocation(input, _Actions.REPLACE));
+  };
+
+  var goBack = function goBack() {
+    return go(-1);
+  };
+
+  var goForward = function goForward() {
+    return go(1);
+  };
+
+  var createKey = function createKey() {
+    return Math.random().toString(36).substr(2, keyLength || 6);
+  };
+
+  var createHref = function createHref(location) {
+    return (0, _PathUtils.createPath)(location);
+  };
+
+  var createLocation = function createLocation(location, action) {
+    var key = arguments.length <= 2 || arguments[2] === undefined ? createKey() : arguments[2];
+    return (0, _LocationUtils.createLocation)(location, action, key);
+  };
+
+  return {
+    getCurrentLocation: getCurrentLocation,
+    listenBefore: listenBefore,
+    listen: listen,
+    transitionTo: transitionTo,
+    push: push,
+    replace: replace,
+    go: go,
+    goBack: goBack,
+    goForward: goForward,
+    createKey: createKey,
+    createPath: _PathUtils.createPath,
+    createHref: createHref,
+    createLocation: createLocation
+  };
+};
+
+exports.default = createHistory;
+},{"./Actions":1,"./AsyncUtils":2,"./LocationUtils":8,"./PathUtils":9,"./runTransitionHook":12}],12:[function(require,module,exports){
+(function (process){
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+
+var _warning = require('warning');
+
+var _warning2 = _interopRequireDefault(_warning);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+var runTransitionHook = function runTransitionHook(hook, location, callback) {
+  var result = hook(location, callback);
+
+  if (hook.length < 2) {
+    // Assume the hook runs synchronously and automatically
+    // call the callback with the return value.
+    callback(result);
+  } else {
+    process.env.NODE_ENV !== 'production' ? (0, _warning2.default)(result === undefined, 'You should not "return" in a transition hook with a callback argument; ' + 'call the callback instead') : void 0;
+  }
+};
+
+exports.default = runTransitionHook;
+}).call(this,require('_process'))
+},{"_process":14,"warning":17}],13:[function(require,module,exports){
+(function (process){
+/**
+ * Copyright 2013-2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ */
+
+'use strict';
+
+/**
+ * Use invariant() to assert state which your program assumes to be true.
+ *
+ * Provide sprintf-style format (only %s is supported) and arguments
+ * to provide information about what broke and what you were
+ * expecting.
+ *
+ * The invariant message will be stripped in production, but the invariant
+ * will remain to ensure logic does not differ in production.
+ */
+
+var invariant = function(condition, format, a, b, c, d, e, f) {
+  if (process.env.NODE_ENV !== 'production') {
+    if (format === undefined) {
+      throw new Error('invariant requires an error message argument');
+    }
+  }
+
+  if (!condition) {
+    var error;
+    if (format === undefined) {
+      error = new Error(
+        'Minified exception occurred; use the non-minified dev environment ' +
+        'for the full error message and additional helpful warnings.'
+      );
+    } else {
+      var args = [a, b, c, d, e, f];
+      var argIndex = 0;
+      error = new Error(
+        format.replace(/%s/g, function() { return args[argIndex++]; })
+      );
+      error.name = 'Invariant Violation';
+    }
+
+    error.framesToPop = 1; // we don't care about invariant's own frame
+    throw error;
+  }
+};
+
+module.exports = invariant;
+
+}).call(this,require('_process'))
+},{"_process":14}],14:[function(require,module,exports){
+// shim for using process in browser
+
+var process = module.exports = {};
+var queue = [];
+var draining = false;
+var currentQueue;
+var queueIndex = -1;
+
+function cleanUpNextTick() {
+    draining = false;
+    if (currentQueue.length) {
+        queue = currentQueue.concat(queue);
+    } else {
+        queueIndex = -1;
+    }
+    if (queue.length) {
+        drainQueue();
+    }
+}
+
+function drainQueue() {
+    if (draining) {
+        return;
+    }
+    var timeout = setTimeout(cleanUpNextTick);
+    draining = true;
+
+    var len = queue.length;
+    while(len) {
+        currentQueue = queue;
+        queue = [];
+        while (++queueIndex < len) {
+            if (currentQueue) {
+                currentQueue[queueIndex].run();
+            }
+        }
+        queueIndex = -1;
+        len = queue.length;
+    }
+    currentQueue = null;
+    draining = false;
+    clearTimeout(timeout);
+}
+
+process.nextTick = function (fun) {
+    var args = new Array(arguments.length - 1);
+    if (arguments.length > 1) {
+        for (var i = 1; i < arguments.length; i++) {
+            args[i - 1] = arguments[i];
+        }
+    }
+    queue.push(new Item(fun, args));
+    if (queue.length === 1 && !draining) {
+        setTimeout(drainQueue, 0);
+    }
+};
+
+// v8 likes predictible objects
+function Item(fun, array) {
+    this.fun = fun;
+    this.array = array;
+}
+Item.prototype.run = function () {
+    this.fun.apply(null, this.array);
+};
+process.title = 'browser';
+process.browser = true;
+process.env = {};
+process.argv = [];
+process.version = ''; // empty string to avoid regexp issues
+process.versions = {};
+
+function noop() {}
+
+process.on = noop;
+process.addListener = noop;
+process.once = noop;
+process.off = noop;
+process.removeListener = noop;
+process.removeAllListeners = noop;
+process.emit = noop;
+
+process.binding = function (name) {
+    throw new Error('process.binding is not supported');
+};
+
+process.cwd = function () { return '/' };
+process.chdir = function (dir) {
+    throw new Error('process.chdir is not supported');
+};
+process.umask = function() { return 0; };
+
+},{}],15:[function(require,module,exports){
 //  Ramda v0.19.1
 //  https://github.com/ramda/ramda
 //  (c) 2013-2016 Scott Sauyet, Michael Hurley, and David Chambers
@@ -8446,10 +9555,1240 @@
 
 }.call(this));
 
-},{}],2:[function(require,module,exports){
+},{}],16:[function(require,module,exports){
+(function (process){
+// Rebound
+// =======
+// **Rebound** is a simple library that models Spring dynamics for the
+// purpose of driving physical animations.
+//
+// Origin
+// ------
+// [Rebound](http://facebook.github.io/rebound) was originally written
+// in Java to provide a lightweight physics system for
+// [Home](https://play.google.com/store/apps/details?id=com.facebook.home) and
+// [Chat Heads](https://play.google.com/store/apps/details?id=com.facebook.orca)
+// on Android. It's now been adopted by several other Android
+// applications. This JavaScript port was written to provide a quick
+// way to demonstrate Rebound animations on the web for a
+// [conference talk](https://www.youtube.com/watch?v=s5kNm-DgyjY). Since then
+// the JavaScript version has been used to build some really nice interfaces.
+// Check out [brandonwalkin.com](http://brandonwalkin.com) for an
+// example.
+//
+// Overview
+// --------
+// The Library provides a SpringSystem for maintaining a set of Spring
+// objects and iterating those Springs through a physics solver loop
+// until equilibrium is achieved. The Spring class is the basic
+// animation driver provided by Rebound. By attaching a listener to
+// a Spring, you can observe its motion. The observer function is
+// notified of position changes on the spring as it solves for
+// equilibrium. These position updates can be mapped to an animation
+// range to drive animated property updates on your user interface
+// elements (translation, rotation, scale, etc).
+//
+// Example
+// -------
+// Here's a simple example. Pressing and releasing on the logo below
+// will cause it to scale up and down with a springy animation.
+//
+// <div style="text-align:center; margin-bottom:50px; margin-top:50px">
+//   <img
+//     src="http://facebook.github.io/rebound/images/rebound.png"
+//     id="logo"
+//   />
+// </div>
+// <script src="../rebound.min.js"></script>
+// <script>
+//
+// function scale(el, val) {
+//   el.style.mozTransform =
+//   el.style.msTransform =
+//   el.style.webkitTransform =
+//   el.style.transform = 'scale3d(' + val + ', ' + val + ', 1)';
+// }
+// var el = document.getElementById('logo');
+//
+// var springSystem = new rebound.SpringSystem();
+// var spring = springSystem.createSpring(50, 3);
+// spring.addListener({
+//   onSpringUpdate: function(spring) {
+//     var val = spring.getCurrentValue();
+//     val = rebound.MathUtil.mapValueInRange(val, 0, 1, 1, 0.5);
+//     scale(el, val);
+//   }
+// });
+//
+// el.addEventListener('mousedown', function() {
+//   spring.setEndValue(1);
+// });
+//
+// el.addEventListener('mouseout', function() {
+//   spring.setEndValue(0);
+// });
+//
+// el.addEventListener('mouseup', function() {
+//   spring.setEndValue(0);
+// });
+//
+// </script>
+//
+// Here's how it works.
+//
+// ```
+// // Get a reference to the logo element.
+// var el = document.getElementById('logo');
+//
+// // create a SpringSystem and a Spring with a bouncy config.
+// var springSystem = new rebound.SpringSystem();
+// var spring = springSystem.createSpring(50, 3);
+//
+// // Add a listener to the spring. Every time the physics
+// // solver updates the Spring's value onSpringUpdate will
+// // be called.
+// spring.addListener({
+//   onSpringUpdate: function(spring) {
+//     var val = spring.getCurrentValue();
+//     val = rebound.MathUtil
+//                  .mapValueInRange(val, 0, 1, 1, 0.5);
+//     scale(el, val);
+//   }
+// });
+//
+// // Listen for mouse down/up/out and toggle the
+// //springs endValue from 0 to 1.
+// el.addEventListener('mousedown', function() {
+//   spring.setEndValue(1);
+// });
+//
+// el.addEventListener('mouseout', function() {
+//   spring.setEndValue(0);
+// });
+//
+// el.addEventListener('mouseup', function() {
+//   spring.setEndValue(0);
+// });
+//
+// // Helper for scaling an element with css transforms.
+// function scale(el, val) {
+//   el.style.mozTransform =
+//   el.style.msTransform =
+//   el.style.webkitTransform =
+//   el.style.transform = 'scale3d(' +
+//     val + ', ' + val + ', 1)';
+// }
+// ```
+
+(function() {
+  var rebound = {};
+  var util = rebound.util = {};
+  var concat = Array.prototype.concat;
+  var slice = Array.prototype.slice;
+
+  // Bind a function to a context object.
+  util.bind = function bind(func, context) {
+    var args = slice.call(arguments, 2);
+    return function() {
+      func.apply(context, concat.call(args, slice.call(arguments)));
+    };
+  };
+
+  // Add all the properties in the source to the target.
+  util.extend = function extend(target, source) {
+    for (var key in source) {
+      if (source.hasOwnProperty(key)) {
+        target[key] = source[key];
+      }
+    }
+  };
+
+  // SpringSystem
+  // ------------
+  // **SpringSystem** is a set of Springs that all run on the same physics
+  // timing loop. To get started with a Rebound animation you first
+  // create a new SpringSystem and then add springs to it.
+  var SpringSystem = rebound.SpringSystem = function SpringSystem(looper) {
+    this._springRegistry = {};
+    this._activeSprings = [];
+    this.listeners = [];
+    this._idleSpringIndices = [];
+    this.looper = looper || new AnimationLooper();
+    this.looper.springSystem = this;
+  };
+
+  util.extend(SpringSystem.prototype, {
+
+    _springRegistry: null,
+
+    _isIdle: true,
+
+    _lastTimeMillis: -1,
+
+    _activeSprings: null,
+
+    listeners: null,
+
+    _idleSpringIndices: null,
+
+    // A SpringSystem is iterated by a looper. The looper is responsible
+    // for executing each frame as the SpringSystem is resolved to idle.
+    // There are three types of Loopers described below AnimationLooper,
+    // SimulationLooper, and SteppingSimulationLooper. AnimationLooper is
+    // the default as it is the most useful for common UI animations.
+    setLooper: function(looper) {
+      this.looper = looper;
+      looper.springSystem = this;
+    },
+
+    // Add a new spring to this SpringSystem. This Spring will now be solved for
+    // during the physics iteration loop. By default the spring will use the
+    // default Origami spring config with 40 tension and 7 friction, but you can
+    // also provide your own values here.
+    createSpring: function(tension, friction) {
+      var springConfig;
+      if (tension === undefined || friction === undefined) {
+        springConfig = SpringConfig.DEFAULT_ORIGAMI_SPRING_CONFIG;
+      } else {
+        springConfig =
+          SpringConfig.fromOrigamiTensionAndFriction(tension, friction);
+      }
+      return this.createSpringWithConfig(springConfig);
+    },
+
+    // Add a spring with a specified bounciness and speed. To replicate Origami
+    // compositions based on PopAnimation patches, use this factory method to
+    // create matching springs.
+    createSpringWithBouncinessAndSpeed: function(bounciness, speed) {
+      var springConfig;
+      if (bounciness === undefined || speed === undefined) {
+        springConfig = SpringConfig.DEFAULT_ORIGAMI_SPRING_CONFIG;
+      } else {
+        springConfig =
+          SpringConfig.fromBouncinessAndSpeed(bounciness, speed);
+      }
+      return this.createSpringWithConfig(springConfig);
+    },
+
+    // Add a spring with the provided SpringConfig.
+    createSpringWithConfig: function(springConfig) {
+      var spring = new Spring(this);
+      this.registerSpring(spring);
+      spring.setSpringConfig(springConfig);
+      return spring;
+    },
+
+    // You can check if a SpringSystem is idle or active by calling
+    // getIsIdle. If all of the Springs in the SpringSystem are at rest,
+    // i.e. the physics forces have reached equilibrium, then this
+    // method will return true.
+    getIsIdle: function() {
+      return this._isIdle;
+    },
+
+    // Retrieve a specific Spring from the SpringSystem by id. This
+    // can be useful for inspecting the state of a spring before
+    // or after an integration loop in the SpringSystem executes.
+    getSpringById: function (id) {
+      return this._springRegistry[id];
+    },
+
+    // Get a listing of all the springs registered with this
+    // SpringSystem.
+    getAllSprings: function() {
+      var vals = [];
+      for (var id in this._springRegistry) {
+        if (this._springRegistry.hasOwnProperty(id)) {
+          vals.push(this._springRegistry[id]);
+        }
+      }
+      return vals;
+    },
+
+    // registerSpring is called automatically as soon as you create
+    // a Spring with SpringSystem#createSpring. This method sets the
+    // spring up in the registry so that it can be solved in the
+    // solver loop.
+    registerSpring: function(spring) {
+      this._springRegistry[spring.getId()] = spring;
+    },
+
+    // Deregister a spring with this SpringSystem. The SpringSystem will
+    // no longer consider this Spring during its integration loop once
+    // this is called. This is normally done automatically for you when
+    // you call Spring#destroy.
+    deregisterSpring: function(spring) {
+      removeFirst(this._activeSprings, spring);
+      delete this._springRegistry[spring.getId()];
+    },
+
+    advance: function(time, deltaTime) {
+      while(this._idleSpringIndices.length > 0) this._idleSpringIndices.pop();
+      for (var i = 0, len = this._activeSprings.length; i < len; i++) {
+        var spring = this._activeSprings[i];
+        if (spring.systemShouldAdvance()) {
+          spring.advance(time / 1000.0, deltaTime / 1000.0);
+        } else {
+          this._idleSpringIndices.push(this._activeSprings.indexOf(spring));
+        }
+      }
+      while(this._idleSpringIndices.length > 0) {
+        var idx = this._idleSpringIndices.pop();
+        idx >= 0 && this._activeSprings.splice(idx, 1);
+      }
+    },
+
+    // This is our main solver loop called to move the simulation
+    // forward through time. Before each pass in the solver loop
+    // onBeforeIntegrate is called on an any listeners that have
+    // registered themeselves with the SpringSystem. This gives you
+    // an opportunity to apply any constraints or adjustments to
+    // the springs that should be enforced before each iteration
+    // loop. Next the advance method is called to move each Spring in
+    // the systemShouldAdvance forward to the current time. After the
+    // integration step runs in advance, onAfterIntegrate is called
+    // on any listeners that have registered themselves with the
+    // SpringSystem. This gives you an opportunity to run any post
+    // integration constraints or adjustments on the Springs in the
+    // SpringSystem.
+    loop: function(currentTimeMillis) {
+      var listener;
+      if (this._lastTimeMillis === -1) {
+        this._lastTimeMillis = currentTimeMillis -1;
+      }
+      var ellapsedMillis = currentTimeMillis - this._lastTimeMillis;
+      this._lastTimeMillis = currentTimeMillis;
+
+      var i = 0, len = this.listeners.length;
+      for (i = 0; i < len; i++) {
+        listener = this.listeners[i];
+        listener.onBeforeIntegrate && listener.onBeforeIntegrate(this);
+      }
+
+      this.advance(currentTimeMillis, ellapsedMillis);
+      if (this._activeSprings.length === 0) {
+        this._isIdle = true;
+        this._lastTimeMillis = -1;
+      }
+
+      for (i = 0; i < len; i++) {
+        listener = this.listeners[i];
+        listener.onAfterIntegrate && listener.onAfterIntegrate(this);
+      }
+
+      if (!this._isIdle) {
+        this.looper.run();
+      }
+    },
+
+    // activateSpring is used to notify the SpringSystem that a Spring
+    // has become displaced. The system responds by starting its solver
+    // loop up if it is currently idle.
+    activateSpring: function(springId) {
+      var spring = this._springRegistry[springId];
+      if (this._activeSprings.indexOf(spring) == -1) {
+        this._activeSprings.push(spring);
+      }
+      if (this.getIsIdle()) {
+        this._isIdle = false;
+        this.looper.run();
+      }
+    },
+
+    // Add a listener to the SpringSystem so that you can receive
+    // before/after integration notifications allowing Springs to be
+    // constrained or adjusted.
+    addListener: function(listener) {
+      this.listeners.push(listener);
+    },
+
+    // Remove a previously added listener on the SpringSystem.
+    removeListener: function(listener) {
+      removeFirst(this.listeners, listener);
+    },
+
+    // Remove all previously added listeners on the SpringSystem.
+    removeAllListeners: function() {
+      this.listeners = [];
+    }
+
+  });
+
+  // Spring
+  // ------
+  // **Spring** provides a model of a classical spring acting to
+  // resolve a body to equilibrium. Springs have configurable
+  // tension which is a force multipler on the displacement of the
+  // spring from its rest point or `endValue` as defined by [Hooke's
+  // law](http://en.wikipedia.org/wiki/Hooke's_law). Springs also have
+  // configurable friction, which ensures that they do not oscillate
+  // infinitely. When a Spring is displaced by updating it's resting
+  // or `currentValue`, the SpringSystems that contain that Spring
+  // will automatically start looping to solve for equilibrium. As each
+  // timestep passes, `SpringListener` objects attached to the Spring
+  // will be notified of the updates providing a way to drive an
+  // animation off of the spring's resolution curve.
+  var Spring = rebound.Spring = function Spring(springSystem) {
+    this._id = 's' + Spring._ID++;
+    this._springSystem = springSystem;
+    this.listeners = [];
+    this._currentState = new PhysicsState();
+    this._previousState = new PhysicsState();
+    this._tempState = new PhysicsState();
+  };
+
+  util.extend(Spring, {
+    _ID: 0,
+
+    MAX_DELTA_TIME_SEC: 0.064,
+
+    SOLVER_TIMESTEP_SEC: 0.001
+
+  });
+
+  util.extend(Spring.prototype, {
+
+    _id: 0,
+
+    _springConfig: null,
+
+    _overshootClampingEnabled: false,
+
+    _currentState: null,
+
+    _previousState: null,
+
+    _tempState: null,
+
+    _startValue: 0,
+
+    _endValue: 0,
+
+    _wasAtRest: true,
+
+    _restSpeedThreshold: 0.001,
+
+    _displacementFromRestThreshold: 0.001,
+
+    listeners: null,
+
+    _timeAccumulator: 0,
+
+    _springSystem: null,
+
+    // Remove a Spring from simulation and clear its listeners.
+    destroy: function() {
+      this.listeners = [];
+      this.frames = [];
+      this._springSystem.deregisterSpring(this);
+    },
+
+    // Get the id of the spring, which can be used to retrieve it from
+    // the SpringSystems it participates in later.
+    getId: function() {
+      return this._id;
+    },
+
+    // Set the configuration values for this Spring. A SpringConfig
+    // contains the tension and friction values used to solve for the
+    // equilibrium of the Spring in the physics loop.
+    setSpringConfig: function(springConfig) {
+      this._springConfig = springConfig;
+      return this;
+    },
+
+    // Retrieve the SpringConfig used by this Spring.
+    getSpringConfig: function() {
+      return this._springConfig;
+    },
+
+    // Set the current position of this Spring. Listeners will be updated
+    // with this value immediately. If the rest or `endValue` is not
+    // updated to match this value, then the spring will be dispalced and
+    // the SpringSystem will start to loop to restore the spring to the
+    // `endValue`.
+    //
+    // A common pattern is to move a Spring around without animation by
+    // calling.
+    //
+    // ```
+    // spring.setCurrentValue(n).setAtRest();
+    // ```
+    //
+    // This moves the Spring to a new position `n`, sets the endValue
+    // to `n`, and removes any velocity from the `Spring`. By doing
+    // this you can allow the `SpringListener` to manage the position
+    // of UI elements attached to the spring even when moving without
+    // animation. For example, when dragging an element you can
+    // update the position of an attached view through a spring
+    // by calling `spring.setCurrentValue(x)`. When
+    // the gesture ends you can update the Springs
+    // velocity and endValue
+    // `spring.setVelocity(gestureEndVelocity).setEndValue(flingTarget)`
+    // to cause it to naturally animate the UI element to the resting
+    // position taking into account existing velocity. The codepaths for
+    // synchronous movement and spring driven animation can
+    // be unified using this technique.
+    setCurrentValue: function(currentValue, skipSetAtRest) {
+      this._startValue = currentValue;
+      this._currentState.position = currentValue;
+      if (!skipSetAtRest) {
+        this.setAtRest();
+      }
+      this.notifyPositionUpdated(false, false);
+      return this;
+    },
+
+    // Get the position that the most recent animation started at. This
+    // can be useful for determining the number off oscillations that
+    // have occurred.
+    getStartValue: function() {
+      return this._startValue;
+    },
+
+    // Retrieve the current value of the Spring.
+    getCurrentValue: function() {
+      return this._currentState.position;
+    },
+
+    // Get the absolute distance of the Spring from it's resting endValue
+    // position.
+    getCurrentDisplacementDistance: function() {
+      return this.getDisplacementDistanceForState(this._currentState);
+    },
+
+    getDisplacementDistanceForState: function(state) {
+      return Math.abs(this._endValue - state.position);
+    },
+
+    // Set the endValue or resting position of the spring. If this
+    // value is different than the current value, the SpringSystem will
+    // be notified and will begin running its solver loop to resolve
+    // the Spring to equilibrium. Any listeners that are registered
+    // for onSpringEndStateChange will also be notified of this update
+    // immediately.
+    setEndValue: function(endValue) {
+      if (this._endValue == endValue && this.isAtRest())  {
+        return this;
+      }
+      this._startValue = this.getCurrentValue();
+      this._endValue = endValue;
+      this._springSystem.activateSpring(this.getId());
+      for (var i = 0, len = this.listeners.length; i < len; i++) {
+        var listener = this.listeners[i];
+        var onChange = listener.onSpringEndStateChange;
+        onChange && onChange(this);
+      }
+      return this;
+    },
+
+    // Retrieve the endValue or resting position of this spring.
+    getEndValue: function() {
+      return this._endValue;
+    },
+
+    // Set the current velocity of the Spring. As previously mentioned,
+    // this can be useful when you are performing a direct manipulation
+    // gesture. When a UI element is released you may call setVelocity
+    // on its animation Spring so that the Spring continues with the
+    // same velocity as the gesture ended with. The friction, tension,
+    // and displacement of the Spring will then govern its motion to
+    // return to rest on a natural feeling curve.
+    setVelocity: function(velocity) {
+      if (velocity === this._currentState.velocity) {
+        return this;
+      }
+      this._currentState.velocity = velocity;
+      this._springSystem.activateSpring(this.getId());
+      return this;
+    },
+
+    // Get the current velocity of the Spring.
+    getVelocity: function() {
+      return this._currentState.velocity;
+    },
+
+    // Set a threshold value for the movement speed of the Spring below
+    // which it will be considered to be not moving or resting.
+    setRestSpeedThreshold: function(restSpeedThreshold) {
+      this._restSpeedThreshold = restSpeedThreshold;
+      return this;
+    },
+
+    // Retrieve the rest speed threshold for this Spring.
+    getRestSpeedThreshold: function() {
+      return this._restSpeedThreshold;
+    },
+
+    // Set a threshold value for displacement below which the Spring
+    // will be considered to be not displaced i.e. at its resting
+    // `endValue`.
+    setRestDisplacementThreshold: function(displacementFromRestThreshold) {
+      this._displacementFromRestThreshold = displacementFromRestThreshold;
+    },
+
+    // Retrieve the rest displacement threshold for this spring.
+    getRestDisplacementThreshold: function() {
+      return this._displacementFromRestThreshold;
+    },
+
+    // Enable overshoot clamping. This means that the Spring will stop
+    // immediately when it reaches its resting position regardless of
+    // any existing momentum it may have. This can be useful for certain
+    // types of animations that should not oscillate such as a scale
+    // down to 0 or alpha fade.
+    setOvershootClampingEnabled: function(enabled) {
+      this._overshootClampingEnabled = enabled;
+      return this;
+    },
+
+    // Check if overshoot clamping is enabled for this spring.
+    isOvershootClampingEnabled: function() {
+      return this._overshootClampingEnabled;
+    },
+
+    // Check if the Spring has gone past its end point by comparing
+    // the direction it was moving in when it started to the current
+    // position and end value.
+    isOvershooting: function() {
+      var start = this._startValue;
+      var end = this._endValue;
+      return this._springConfig.tension > 0 &&
+       ((start < end && this.getCurrentValue() > end) ||
+       (start > end && this.getCurrentValue() < end));
+    },
+
+    // Spring.advance is the main solver method for the Spring. It takes
+    // the current time and delta since the last time step and performs
+    // an RK4 integration to get the new position and velocity state
+    // for the Spring based on the tension, friction, velocity, and
+    // displacement of the Spring.
+    advance: function(time, realDeltaTime) {
+      var isAtRest = this.isAtRest();
+
+      if (isAtRest && this._wasAtRest) {
+        return;
+      }
+
+      var adjustedDeltaTime = realDeltaTime;
+      if (realDeltaTime > Spring.MAX_DELTA_TIME_SEC) {
+        adjustedDeltaTime = Spring.MAX_DELTA_TIME_SEC;
+      }
+
+      this._timeAccumulator += adjustedDeltaTime;
+
+      var tension = this._springConfig.tension,
+          friction = this._springConfig.friction,
+
+          position = this._currentState.position,
+          velocity = this._currentState.velocity,
+          tempPosition = this._tempState.position,
+          tempVelocity = this._tempState.velocity,
+
+          aVelocity, aAcceleration,
+          bVelocity, bAcceleration,
+          cVelocity, cAcceleration,
+          dVelocity, dAcceleration,
+
+          dxdt, dvdt;
+
+      while(this._timeAccumulator >= Spring.SOLVER_TIMESTEP_SEC) {
+
+        this._timeAccumulator -= Spring.SOLVER_TIMESTEP_SEC;
+
+        if (this._timeAccumulator < Spring.SOLVER_TIMESTEP_SEC) {
+          this._previousState.position = position;
+          this._previousState.velocity = velocity;
+        }
+
+        aVelocity = velocity;
+        aAcceleration =
+          (tension * (this._endValue - tempPosition)) - friction * velocity;
+
+        tempPosition = position + aVelocity * Spring.SOLVER_TIMESTEP_SEC * 0.5;
+        tempVelocity =
+          velocity + aAcceleration * Spring.SOLVER_TIMESTEP_SEC * 0.5;
+        bVelocity = tempVelocity;
+        bAcceleration =
+          (tension * (this._endValue - tempPosition)) - friction * tempVelocity;
+
+        tempPosition = position + bVelocity * Spring.SOLVER_TIMESTEP_SEC * 0.5;
+        tempVelocity =
+          velocity + bAcceleration * Spring.SOLVER_TIMESTEP_SEC * 0.5;
+        cVelocity = tempVelocity;
+        cAcceleration =
+          (tension * (this._endValue - tempPosition)) - friction * tempVelocity;
+
+        tempPosition = position + cVelocity * Spring.SOLVER_TIMESTEP_SEC * 0.5;
+        tempVelocity =
+          velocity + cAcceleration * Spring.SOLVER_TIMESTEP_SEC * 0.5;
+        dVelocity = tempVelocity;
+        dAcceleration =
+          (tension * (this._endValue - tempPosition)) - friction * tempVelocity;
+
+        dxdt =
+          1.0/6.0 * (aVelocity + 2.0 * (bVelocity + cVelocity) + dVelocity);
+        dvdt = 1.0/6.0 * (
+          aAcceleration + 2.0 * (bAcceleration + cAcceleration) + dAcceleration
+        );
+
+        position += dxdt * Spring.SOLVER_TIMESTEP_SEC;
+        velocity += dvdt * Spring.SOLVER_TIMESTEP_SEC;
+      }
+
+      this._tempState.position = tempPosition;
+      this._tempState.velocity = tempVelocity;
+
+      this._currentState.position = position;
+      this._currentState.velocity = velocity;
+
+      if (this._timeAccumulator > 0) {
+        this._interpolate(this._timeAccumulator / Spring.SOLVER_TIMESTEP_SEC);
+      }
+
+      if (this.isAtRest() ||
+          this._overshootClampingEnabled && this.isOvershooting()) {
+
+        if (this._springConfig.tension > 0) {
+          this._startValue = this._endValue;
+          this._currentState.position = this._endValue;
+        } else {
+          this._endValue = this._currentState.position;
+          this._startValue = this._endValue;
+        }
+        this.setVelocity(0);
+        isAtRest = true;
+      }
+
+      var notifyActivate = false;
+      if (this._wasAtRest) {
+        this._wasAtRest = false;
+        notifyActivate = true;
+      }
+
+      var notifyAtRest = false;
+      if (isAtRest) {
+        this._wasAtRest = true;
+        notifyAtRest = true;
+      }
+
+      this.notifyPositionUpdated(notifyActivate, notifyAtRest);
+    },
+
+    notifyPositionUpdated: function(notifyActivate, notifyAtRest) {
+      for (var i = 0, len = this.listeners.length; i < len; i++) {
+        var listener = this.listeners[i];
+        if (notifyActivate && listener.onSpringActivate) {
+          listener.onSpringActivate(this);
+        }
+
+        if (listener.onSpringUpdate) {
+          listener.onSpringUpdate(this);
+        }
+
+        if (notifyAtRest && listener.onSpringAtRest) {
+          listener.onSpringAtRest(this);
+        }
+      }
+    },
+
+
+    // Check if the SpringSystem should advance. Springs are advanced
+    // a final frame after they reach equilibrium to ensure that the
+    // currentValue is exactly the requested endValue regardless of the
+    // displacement threshold.
+    systemShouldAdvance: function() {
+      return !this.isAtRest() || !this.wasAtRest();
+    },
+
+    wasAtRest: function() {
+      return this._wasAtRest;
+    },
+
+    // Check if the Spring is atRest meaning that it's currentValue and
+    // endValue are the same and that it has no velocity. The previously
+    // described thresholds for speed and displacement define the bounds
+    // of this equivalence check. If the Spring has 0 tension, then it will
+    // be considered at rest whenever its absolute velocity drops below the
+    // restSpeedThreshold.
+    isAtRest: function() {
+      return Math.abs(this._currentState.velocity) < this._restSpeedThreshold &&
+        (this.getDisplacementDistanceForState(this._currentState) <=
+          this._displacementFromRestThreshold ||
+        this._springConfig.tension === 0);
+    },
+
+    // Force the spring to be at rest at its current position. As
+    // described in the documentation for setCurrentValue, this method
+    // makes it easy to do synchronous non-animated updates to ui
+    // elements that are attached to springs via SpringListeners.
+    setAtRest: function() {
+      this._endValue = this._currentState.position;
+      this._tempState.position = this._currentState.position;
+      this._currentState.velocity = 0;
+      return this;
+    },
+
+    _interpolate: function(alpha) {
+      this._currentState.position = this._currentState.position *
+        alpha + this._previousState.position * (1 - alpha);
+      this._currentState.velocity = this._currentState.velocity *
+        alpha + this._previousState.velocity * (1 - alpha);
+    },
+
+    getListeners: function() {
+      return this.listeners;
+    },
+
+    addListener: function(newListener) {
+      this.listeners.push(newListener);
+      return this;
+    },
+
+    removeListener: function(listenerToRemove) {
+      removeFirst(this.listeners, listenerToRemove);
+      return this;
+    },
+
+    removeAllListeners: function() {
+      this.listeners = [];
+      return this;
+    },
+
+    currentValueIsApproximately: function(value) {
+      return Math.abs(this.getCurrentValue() - value) <=
+        this.getRestDisplacementThreshold();
+    }
+
+  });
+
+  // PhysicsState
+  // ------------
+  // **PhysicsState** consists of a position and velocity. A Spring uses
+  // this internally to keep track of its current and prior position and
+  // velocity values.
+  var PhysicsState = function PhysicsState() {};
+
+  util.extend(PhysicsState.prototype, {
+    position: 0,
+    velocity: 0
+  });
+
+  // SpringConfig
+  // ------------
+  // **SpringConfig** maintains a set of tension and friction constants
+  // for a Spring. You can use fromOrigamiTensionAndFriction to convert
+  // values from the [Origami](http://facebook.github.io/origami/)
+  // design tool directly to Rebound spring constants.
+  var SpringConfig = rebound.SpringConfig =
+    function SpringConfig(tension, friction) {
+      this.tension = tension;
+      this.friction = friction;
+    };
+
+  // Loopers
+  // -------
+  // **AnimationLooper** plays each frame of the SpringSystem on animation
+  // timing loop. This is the default type of looper for a new spring system
+  // as it is the most common when developing UI.
+  var AnimationLooper = rebound.AnimationLooper = function AnimationLooper() {
+    this.springSystem = null;
+    var _this = this;
+    var _run = function() {
+      _this.springSystem.loop(Date.now());
+    };
+
+    this.run = function() {
+      util.onFrame(_run);
+    };
+  };
+
+  // **SimulationLooper** resolves the SpringSystem to a resting state in a
+  // tight and blocking loop. This is useful for synchronously generating
+  // pre-recorded animations that can then be played on a timing loop later.
+  // Sometimes this lead to better performance to pre-record a single spring
+  // curve and use it to drive many animations; however, it can make dynamic
+  // response to user input a bit trickier to implement.
+  rebound.SimulationLooper = function SimulationLooper(timestep) {
+    this.springSystem = null;
+    var time = 0;
+    var running = false;
+    timestep=timestep || 16.667;
+
+    this.run = function() {
+      if (running) {
+        return;
+      }
+      running = true;
+      while(!this.springSystem.getIsIdle()) {
+        this.springSystem.loop(time+=timestep);
+      }
+      running = false;
+    };
+  };
+
+  // **SteppingSimulationLooper** resolves the SpringSystem one step at a
+  // time controlled by an outside loop. This is useful for testing and
+  // verifying the behavior of a SpringSystem or if you want to control your own
+  // timing loop for some reason e.g. slowing down or speeding up the
+  // simulation.
+  rebound.SteppingSimulationLooper = function(timestep) {
+    this.springSystem = null;
+    var time = 0;
+
+    // this.run is NOOP'd here to allow control from the outside using
+    // this.step.
+    this.run = function(){};
+
+    // Perform one step toward resolving the SpringSystem.
+    this.step = function(timestep) {
+      this.springSystem.loop(time+=timestep);
+    };
+  };
+
+  // Math for converting from
+  // [Origami](http://facebook.github.io/origami/) to
+  // [Rebound](http://facebook.github.io/rebound).
+  // You mostly don't need to worry about this, just use
+  // SpringConfig.fromOrigamiTensionAndFriction(v, v);
+  var OrigamiValueConverter = rebound.OrigamiValueConverter = {
+    tensionFromOrigamiValue: function(oValue) {
+      return (oValue - 30.0) * 3.62 + 194.0;
+    },
+
+    origamiValueFromTension: function(tension) {
+      return (tension - 194.0) / 3.62 + 30.0;
+    },
+
+    frictionFromOrigamiValue: function(oValue) {
+      return (oValue - 8.0) * 3.0 + 25.0;
+    },
+
+    origamiFromFriction: function(friction) {
+      return (friction - 25.0) / 3.0 + 8.0;
+    }
+  };
+
+  // BouncyConversion provides math for converting from Origami PopAnimation
+  // config values to regular Origami tension and friction values. If you are
+  // trying to replicate prototypes made with PopAnimation patches in Origami,
+  // then you should create your springs with
+  // SpringSystem.createSpringWithBouncinessAndSpeed, which uses this Math
+  // internally to create a spring to match the provided PopAnimation
+  // configuration from Origami.
+  var BouncyConversion = rebound.BouncyConversion = function(bounciness, speed){
+    this.bounciness = bounciness;
+    this.speed = speed;
+    var b = this.normalize(bounciness / 1.7, 0, 20.0);
+    b = this.projectNormal(b, 0.0, 0.8);
+    var s = this.normalize(speed / 1.7, 0, 20.0);
+    this.bouncyTension = this.projectNormal(s, 0.5, 200)
+    this.bouncyFriction = this.quadraticOutInterpolation(
+      b,
+      this.b3Nobounce(this.bouncyTension),
+      0.01);
+  }
+
+  util.extend(BouncyConversion.prototype, {
+
+    normalize: function(value, startValue, endValue) {
+      return (value - startValue) / (endValue - startValue);
+    },
+
+    projectNormal: function(n, start, end) {
+      return start + (n * (end - start));
+    },
+
+    linearInterpolation: function(t, start, end) {
+      return t * end + (1.0 - t) * start;
+    },
+
+    quadraticOutInterpolation: function(t, start, end) {
+      return this.linearInterpolation(2*t - t*t, start, end);
+    },
+
+    b3Friction1: function(x) {
+      return (0.0007 * Math.pow(x, 3)) -
+        (0.031 * Math.pow(x, 2)) + 0.64 * x + 1.28;
+    },
+
+    b3Friction2: function(x) {
+      return (0.000044 * Math.pow(x, 3)) -
+        (0.006 * Math.pow(x, 2)) + 0.36 * x + 2.;
+    },
+
+    b3Friction3: function(x) {
+      return (0.00000045 * Math.pow(x, 3)) -
+        (0.000332 * Math.pow(x, 2)) + 0.1078 * x + 5.84;
+    },
+
+    b3Nobounce: function(tension) {
+      var friction = 0;
+      if (tension <= 18) {
+        friction = this.b3Friction1(tension);
+      } else if (tension > 18 && tension <= 44) {
+        friction = this.b3Friction2(tension);
+      } else {
+        friction = this.b3Friction3(tension);
+      }
+      return friction;
+    }
+  });
+
+  util.extend(SpringConfig, {
+    // Convert an origami Spring tension and friction to Rebound spring
+    // constants. If you are prototyping a design with Origami, this
+    // makes it easy to make your springs behave exactly the same in
+    // Rebound.
+    fromOrigamiTensionAndFriction: function(tension, friction) {
+      return new SpringConfig(
+        OrigamiValueConverter.tensionFromOrigamiValue(tension),
+        OrigamiValueConverter.frictionFromOrigamiValue(friction));
+    },
+
+    // Convert an origami PopAnimation Spring bounciness and speed to Rebound
+    // spring constants. If you are using PopAnimation patches in Origami, this
+    // utility will provide springs that match your prototype.
+    fromBouncinessAndSpeed: function(bounciness, speed) {
+      var bouncyConversion = new rebound.BouncyConversion(bounciness, speed);
+      return this.fromOrigamiTensionAndFriction(
+        bouncyConversion.bouncyTension,
+        bouncyConversion.bouncyFriction);
+    },
+
+    // Create a SpringConfig with no tension or a coasting spring with some
+    // amount of Friction so that it does not coast infininitely.
+    coastingConfigWithOrigamiFriction: function(friction) {
+      return new SpringConfig(
+        0,
+        OrigamiValueConverter.frictionFromOrigamiValue(friction)
+      );
+    }
+  });
+
+  SpringConfig.DEFAULT_ORIGAMI_SPRING_CONFIG =
+    SpringConfig.fromOrigamiTensionAndFriction(40, 7);
+
+  util.extend(SpringConfig.prototype, {friction: 0, tension: 0});
+
+  // Here are a couple of function to convert colors between hex codes and RGB
+  // component values. These are handy when performing color
+  // tweening animations.
+  var colorCache = {};
+  util.hexToRGB = function(color) {
+    if (colorCache[color]) {
+      return colorCache[color];
+    }
+    color = color.replace('#', '');
+    if (color.length === 3) {
+      color = color[0] + color[0] + color[1] + color[1] + color[2] + color[2];
+    }
+    var parts = color.match(/.{2}/g);
+
+    var ret = {
+      r: parseInt(parts[0], 16),
+      g: parseInt(parts[1], 16),
+      b: parseInt(parts[2], 16)
+    };
+
+    colorCache[color] = ret;
+    return ret;
+  };
+
+  util.rgbToHex = function(r, g, b) {
+    r = r.toString(16);
+    g = g.toString(16);
+    b = b.toString(16);
+    r = r.length < 2 ? '0' + r : r;
+    g = g.length < 2 ? '0' + g : g;
+    b = b.length < 2 ? '0' + b : b;
+    return '#' + r + g + b;
+  };
+
+  var MathUtil = rebound.MathUtil = {
+    // This helper function does a linear interpolation of a value from
+    // one range to another. This can be very useful for converting the
+    // motion of a Spring to a range of UI property values. For example a
+    // spring moving from position 0 to 1 could be interpolated to move a
+    // view from pixel 300 to 350 and scale it from 0.5 to 1. The current
+    // position of the `Spring` just needs to be run through this method
+    // taking its input range in the _from_ parameters with the property
+    // animation range in the _to_ parameters.
+    mapValueInRange: function(value, fromLow, fromHigh, toLow, toHigh) {
+      var fromRangeSize = fromHigh - fromLow;
+      var toRangeSize = toHigh - toLow;
+      var valueScale = (value - fromLow) / fromRangeSize;
+      return toLow + (valueScale * toRangeSize);
+    },
+
+    // Interpolate two hex colors in a 0 - 1 range or optionally provide a
+    // custom range with fromLow,fromHight. The output will be in hex by default
+    // unless asRGB is true in which case it will be returned as an rgb string.
+    interpolateColor:
+      function(val, startColor, endColor, fromLow, fromHigh, asRGB) {
+      fromLow = fromLow === undefined ? 0 : fromLow;
+      fromHigh = fromHigh === undefined ? 1 : fromHigh;
+      startColor = util.hexToRGB(startColor);
+      endColor = util.hexToRGB(endColor);
+      var r = Math.floor(
+        util.mapValueInRange(val, fromLow, fromHigh, startColor.r, endColor.r)
+      );
+      var g = Math.floor(
+        util.mapValueInRange(val, fromLow, fromHigh, startColor.g, endColor.g)
+      );
+      var b = Math.floor(
+        util.mapValueInRange(val, fromLow, fromHigh, startColor.b, endColor.b)
+      );
+      if (asRGB) {
+        return 'rgb(' + r + ',' + g + ',' + b + ')';
+      } else {
+        return util.rgbToHex(r, g, b);
+      }
+    },
+
+    degreesToRadians: function(deg) {
+      return (deg * Math.PI) / 180;
+    },
+
+    radiansToDegrees: function(rad) {
+      return (rad * 180) / Math.PI;
+    }
+
+  }
+
+  util.extend(util, MathUtil);
+
+
+  // Utilities
+  // ---------
+  // Here are a few useful JavaScript utilities.
+
+  // Lop off the first occurence of the reference in the Array.
+  function removeFirst(array, item) {
+    var idx = array.indexOf(item);
+    idx != -1 && array.splice(idx, 1);
+  }
+
+  var _onFrame;
+  if (typeof window !== 'undefined') {
+    _onFrame = window.requestAnimationFrame ||
+      window.webkitRequestAnimationFrame ||
+      window.mozRequestAnimationFrame ||
+      window.msRequestAnimationFrame ||
+      window.oRequestAnimationFrame ||
+      function(callback) {
+        window.setTimeout(callback, 1000 / 60);
+      };
+  }
+  if (!_onFrame && typeof process !== 'undefined' && process.title === 'node') {
+    _onFrame = setImmediate;
+  }
+
+  // Cross browser/node timer functions.
+  util.onFrame = function onFrame(func) {
+    return _onFrame(func);
+  };
+
+  // Export the public api using exports for common js or the window for
+  // normal browser inclusion.
+  if (typeof exports != 'undefined') {
+    util.extend(exports, rebound);
+  } else if (typeof window != 'undefined') {
+    window.rebound = rebound;
+  }
+})();
+
+
+// Legal Stuff
+// -----------
+/**
+ *  Copyright (c) 2013, Facebook, Inc.
+ *  All rights reserved.
+ *
+ *  This source code is licensed under the BSD-style license found in the
+ *  LICENSE file in the root directory of this source tree. An additional grant
+ *  of patent rights can be found in the PATENTS file in the same directory.
+ */
+
+}).call(this,require('_process'))
+},{"_process":14}],17:[function(require,module,exports){
+(function (process){
+/**
+ * Copyright 2014-2015, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ */
+
 'use strict';
 
+/**
+ * Similar to invariant but only logs a warning if the condition is not met.
+ * This can be used to log issues in development environments in critical
+ * paths. Removing the logging code for production environments will keep the
+ * same logic and follow the same code paths.
+ */
+
+var warning = function() {};
+
+if (process.env.NODE_ENV !== 'production') {
+  warning = function(condition, format, args) {
+    var len = arguments.length;
+    args = new Array(len > 2 ? len - 2 : 0);
+    for (var key = 2; key < len; key++) {
+      args[key - 2] = arguments[key];
+    }
+    if (format === undefined) {
+      throw new Error(
+        '`warning(condition, format, ...args)` requires a warning ' +
+        'message argument'
+      );
+    }
+
+    if (format.length < 10 || (/^[s\W]*$/).test(format)) {
+      throw new Error(
+        'The warning format should be able to uniquely identify this ' +
+        'warning. Please, use a more descriptive format than: ' + format
+      );
+    }
+
+    if (!condition) {
+      var argIndex = 0;
+      var message = 'Warning: ' +
+        format.replace(/%s/g, function() {
+          return args[argIndex++];
+        });
+      if (typeof console !== 'undefined') {
+        console.error(message);
+      }
+      try {
+        // This error was thrown as a convenience so that you can use this stack
+        // to find the callsite that caused this warning to fire.
+        throw new Error(message);
+      } catch(x) {}
+    }
+  };
+}
+
+module.exports = warning;
+
+}).call(this,require('_process'))
+},{"_process":14}],18:[function(require,module,exports){
+'use strict';
+
+var _rebound = require('rebound');
+
 var _ramda = require('ramda');
+
+var _createHashHistory = require('history/lib/createHashHistory');
+
+var _createHashHistory2 = _interopRequireDefault(_createHashHistory);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _toConsumableArray(arr) { if (Array.isArray(arr)) { for (var i = 0, arr2 = Array(arr.length); i < arr.length; i++) { arr2[i] = arr[i]; } return arr2; } else { return Array.from(arr); } }
 
 window.trace = function () {
     for (var _len = arguments.length, logs = Array(_len), _key = 0; _key < _len; _key++) {
@@ -8463,127 +10802,70 @@ window.trace = function () {
     };
 };
 
-var EasingFunctions = {
-    // no easing, no acceleration
-    linear: function linear(t) {
-        return t;
-    },
-    // accelerating from zero velocity
-    easeInQuad: function easeInQuad(t) {
-        return t * t;
-    },
-    // decelerating to zero velocity
-    easeOutQuad: function easeOutQuad(t) {
-        return t * (2 - t);
-    },
-    // acceleration until halfway, then deceleration
-    easeInOutQuad: function easeInOutQuad(t) {
-        return t < .5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
-    },
-    // accelerating from zero velocity
-    easeInCubic: function easeInCubic(t) {
-        return t * t * t;
-    },
-    // decelerating to zero velocity
-    easeOutCubic: function easeOutCubic(t) {
-        return --t * t * t + 1;
-    },
-    // acceleration until halfway, then deceleration
-    easeInOutCubic: function easeInOutCubic(t) {
-        return t < .5 ? 4 * t * t * t : (t - 1) * (2 * t - 2) * (2 * t - 2) + 1;
-    },
-    // accelerating from zero velocity
-    easeInQuart: function easeInQuart(t) {
-        return t * t * t * t;
-    },
-    // decelerating to zero velocity
-    easeOutQuart: function easeOutQuart(t) {
-        return 1 - --t * t * t * t;
-    },
-    // acceleration until halfway, then deceleration
-    easeInOutQuart: function easeInOutQuart(t) {
-        return t < .5 ? 8 * t * t * t * t : 1 - 8 * --t * t * t * t;
-    },
-    // accelerating from zero velocity
-    easeInQuint: function easeInQuint(t) {
-        return t * t * t * t * t;
-    },
-    // decelerating to zero velocity
-    easeOutQuint: function easeOutQuint(t) {
-        return 1 + --t * t * t * t * t;
-    },
-    // acceleration until halfway, then deceleration
-    easeInOutQuint: function easeInOutQuint(t) {
-        return t < .5 ? 16 * t * t * t * t * t : 1 + 16 * --t * t * t * t * t;
-    },
-    // bounce out effect
-    easeOutElastic: function easeOutElastic(t, b, c, d) {
-        var b = 0;
-        var d = 1;
-        var c = 1;
-        var s = 1.70158;
-        var p = 0;
-        var a = c;
-        if (t == 0) return b;
-        if ((t /= d) == 1) return b + c;if (!p) p = d * .3;
-        if (a < Math.abs(c)) {
-            a = c;var s = p / 4;
-        } else var s = p / (2 * Math.PI) * Math.asin(c / a);
-        return a * Math.pow(2, -10 * t) * Math.sin((t * d - s) * (2 * Math.PI) / p) + c + b;
+
+var drawLogo = function drawLogo(val) {
+    var trans = val * 50;
+    document.getElementById('logo-1').style.transform = 'translate(' + -trans + 'px, ' + -trans + 'px) scale(' + (2 - val) + ')';
+    document.getElementById('logo-2').style.transform = 'translate(' + trans + 'px, ' + -trans + 'px) scale(' + (2 - val) + ') rotate(' + val * 90 + 'deg)';
+    document.getElementById('logo-3').style.transform = 'translate(' + trans + 'px, ' + trans + 'px) scale(' + (2 - val) + ') rotate(' + val * 180 + 'deg)';
+    document.getElementById('logo-4').style.transform = 'translate(' + -trans + 'px, ' + trans + 'px) scale(' + (2 - val) + ') rotate(' + -val * 90 + 'deg)';
+};
+
+var springSystem = new _rebound.SpringSystem();
+var logoSpring = springSystem.createSpring(50, 20);
+var logo = document.getElementById('logo');
+var brandLogo = document.getElementsByClassName('brand-text');
+logo.addEventListener('mouseenter', function () {
+    return logoSpring.setEndValue(1);
+});
+logo.addEventListener('mouseleave', function () {
+    return logoSpring.setEndValue(0);
+});
+logoSpring.addListener({
+    onSpringUpdate: function onSpringUpdate(logoSpring) {
+        var val = logoSpring.getCurrentValue();
+        drawLogo(val);
+        [].concat(_toConsumableArray(brandLogo)).forEach(function (el) {
+            el.style.opacity = (0, _ramda.max)(0, val * 1.5 - 0.5);
+            el.style.transform = 'translate(0px, ' + -val * 100 + 'px)';
+        });
     }
-};
+});
 
-var normalizedDistanceFrom = function normalizedDistanceFrom(element) {
-    return function (_ref) {
-        var x = _ref.x;
-        var y = _ref.y;
-        var dx = element.clientWidth;
-        var dy = element.clientHeight;
-        var xElem = element.offsetLeft;
-        var yElem = element.offsetTop;
+[].concat(_toConsumableArray(document.getElementsByClassName('menu-link'))).forEach(function (el) {
+    el.addEventListener('click', function (e) {
+        e.preventDefault();
+        history.push({
+            pathname: el.attributes.href.value
+        });
+    });
+});
 
-        xElem += dx / 2;
-        yElem += dy / 2;
-        return Math.sqrt(Math.pow((x - xElem) / (2 * dx), 2) + Math.pow((y - yElem) / (2 * dy), 2));
-    };
-};
+function printDesign() {
+    document.getElementById('design').class = 'show';
+    document.getElementsByClassName('brand-container').item(0).style.position = 'initial';
+}
 
-var logo = function logo(proximity) {
-    var trans = proximity * 50;
-    document.getElementById('logo-1').setAttribute('transform', 'translate(' + -trans + ' ' + -trans + ')');
-    document.getElementById('logo-2').setAttribute('transform', 'translate(' + trans + ' ' + -trans + ') rotate(' + proximity * 90 + ' 100 100)');
-    document.getElementById('logo-3').setAttribute('transform', 'translate(' + trans + ' ' + trans + ') rotate(' + proximity * 180 + ' 100 100)');
-    document.getElementById('logo-4').setAttribute('transform', 'translate(' + -trans + ' ' + trans + ') rotate(' + -proximity * 90 + ' 100 100)');
-};
+function routes(path) {
+    switch (routes) {
+        case '/design':
+            return printDesign();
+        case '/poetry':
+            return printPoetry();
+        case '/beats':
+            return printBeats();
+        case '/street':
+            return printBeats();
+        case '/':
+            return printIndex();
+    }
+}
+// Get the current location
+var history = (0, _createHashHistory2.default)();
+// Listen for changes to the current location
+var unlisten = history.listen(function (location) {
+    routes(location);
+});
+routes(history.getCurrentLocation().path);
 
-var displayGradient = function displayGradient(template) {
-    return document.getElementById('RadialGradient1').outerHTML = template;
-};
-
-var toCoordinate = function toCoordinate(_ref2) {
-    var x = _ref2.pageX;
-    var y = _ref2.pageY;
-    return { x: x, y: y };
-};
-
-var proximity = (0, _ramda.pipe)(toCoordinate, normalizedDistanceFrom(document.getElementById('logo')), function (x) {
-    return x - 0.2;
-}, (0, _ramda.min)(1), (0, _ramda.max)(0), function (x) {
-    return 1 - x;
-}, EasingFunctions.easeOutQuad
-// EasingFunctions.easeOutElastic
-);
-
-var doParallel = function doParallel(f, g) {
-    return function (x) {
-        f(x);g(x);
-    };
-};
-
-document.onmousemove = (0, _ramda.pipe)(proximity, logo
-// doParallel(
-// compose(displayGradient, gradient),
-// )
-);
-
-},{"ramda":1}]},{},[2]);
+},{"history/lib/createHashHistory":10,"ramda":15,"rebound":16}]},{},[18]);

@@ -1,90 +1,72 @@
-import { pipe, min, max, compose, repeat, join, __ } from 'ramda';
 window.trace = (...logs) => (x) => console.log(...logs, x) || x;
+import { SpringSystem, MathUtil } from 'rebound';
+import { max } from 'ramda';
+import createHistory from 'history/lib/createHashHistory'
 
-const EasingFunctions = {
-    // no easing, no acceleration
-    linear: function (t) { return t },
-    // accelerating from zero velocity
-    easeInQuad: function (t) { return t*t },
-    // decelerating to zero velocity
-    easeOutQuad: function (t) { return t*(2-t) },
-    // acceleration until halfway, then deceleration
-    easeInOutQuad: function (t) { return t<.5 ? 2*t*t : -1+(4-2*t)*t },
-    // accelerating from zero velocity
-    easeInCubic: function (t) { return t*t*t },
-    // decelerating to zero velocity
-    easeOutCubic: function (t) { return (--t)*t*t+1 },
-    // acceleration until halfway, then deceleration
-    easeInOutCubic: function (t) { return t<.5 ? 4*t*t*t : (t-1)*(2*t-2)*(2*t-2)+1 },
-    // accelerating from zero velocity
-    easeInQuart: function (t) { return t*t*t*t },
-    // decelerating to zero velocity
-    easeOutQuart: function (t) { return 1-(--t)*t*t*t },
-    // acceleration until halfway, then deceleration
-    easeInOutQuart: function (t) { return t<.5 ? 8*t*t*t*t : 1-8*(--t)*t*t*t },
-    // accelerating from zero velocity
-    easeInQuint: function (t) { return t*t*t*t*t },
-    // decelerating to zero velocity
-    easeOutQuint: function (t) { return 1+(--t)*t*t*t*t },
-    // acceleration until halfway, then deceleration
-    easeInOutQuint: function (t) { return t<.5 ? 16*t*t*t*t*t : 1+16*(--t)*t*t*t*t },
-    // bounce out effect
-    easeOutElastic:function(t,b,c,d){
-       var b = 0;
-       var d = 1;
-       var c = 1;
-       var s=1.70158;
-       var p=0;
-       var a=c;
-       if(t==0)return b;
-       if((t/=d)==1)return b+c;if(!p)p=d*.3;
-       if(a<Math.abs(c)){ a=c; var s=p/4;}
-       else var s=p/(2*Math.PI)*Math.asin(c/a);
-       return a*Math.pow(2,-10*t)*Math.sin((t*d-s)*(2*Math.PI)/p)+c+b;
-    },
+const drawLogo = val => {
+    const trans = val * 50;
+    document.getElementById('logo-1').style.transform = `translate(${-trans}px, ${-trans}px) scale(${2-val})`
+    document.getElementById('logo-2').style.transform = `translate(${trans}px, ${-trans}px) scale(${2-val}) rotate(${val*90}deg)`
+    document.getElementById('logo-3').style.transform = `translate(${trans}px, ${trans}px) scale(${2-val}) rotate(${val*180}deg)`
+    document.getElementById('logo-4').style.transform = `translate(${-trans}px, ${trans}px) scale(${2-val}) rotate(${-val*90}deg)`
 }
 
-
-const normalizedDistanceFrom = (element) => ({ x, y }) => {
-    const { clientWidth: dx, clientHeight: dy } = element;
-    let { offsetLeft: xElem, offsetTop: yElem } = element;
-    xElem += dx / 2;
-    yElem += dy / 2;
-    return Math.sqrt(Math.pow((x - xElem) / (2*dx), 2) + Math.pow((y - yElem) / (2*dy), 2))
-}
-
-const logo = (proximity) => {
-    const trans = proximity * 50;
-    document.getElementById('logo-1').setAttribute('transform',`translate(${-trans} ${-trans})`)
-    document.getElementById('logo-2').setAttribute('transform',`translate(${trans} ${-trans}) rotate(${proximity*90} 100 100)`)
-    document.getElementById('logo-3').setAttribute('transform',`translate(${trans} ${trans}) rotate(${proximity*180} 100 100)`)
-    document.getElementById('logo-4').setAttribute('transform',`translate(${-trans} ${trans}) rotate(${-proximity*90} 100 100)`)
-}
-
-const displayGradient = (template) =>
-    document.getElementById('RadialGradient1').outerHTML = template
-
-const toCoordinate = ({ pageX: x, pageY: y }) => ({ x, y })
-
-const proximity = pipe(
-    toCoordinate,
-    normalizedDistanceFrom(document.getElementById('logo')),
-    x => x-0.2,
-    min(1),
-    max(0),
-    x => 1 - x,
-    EasingFunctions.easeOutQuad
-    // EasingFunctions.easeOutElastic
+const springSystem = new SpringSystem()
+const logoSpring = springSystem.createSpring(50, 20)
+const logo = document.getElementById('logo')
+const brandLogo = document.getElementsByClassName('brand-text')
+logo.addEventListener('mouseenter', () =>
+    logoSpring.setEndValue(1)
 )
-
-const doParallel = (f, g) => x => { f(x); g(x); }
-
-document.onmousemove = pipe(
-    proximity,
-    logo
-    // doParallel(
-        // compose(displayGradient, gradient),
-    // )
+logo.addEventListener('mouseleave', () =>
+    logoSpring.setEndValue(0)
 )
+logoSpring.addListener({
+    onSpringUpdate(logoSpring) {
+        const val = logoSpring.getCurrentValue();
+        drawLogo(val);
+        [...brandLogo].forEach(el => {
+            el.style.opacity =  max(0, val * 1.5 - 0.5)
+            el.style.transform = `translate(0px, ${-val*100}px)`
+        });
+    }
+});
+
+
+[...document.getElementsByClassName('menu-link')].forEach(el => {
+    el.addEventListener('click', e => {
+        e.preventDefault();
+        history.push({
+            pathname: el.attributes.href.value
+        })
+    })
+})
+
+function printDesign() {
+    document.getElementById('design').class = 'show'
+    document.getElementsByClassName('brand-container').item(0).style.position = 'initial';
+}
+
+function routes(path) {
+    switch (routes) {
+        case '/design':
+            return printDesign();
+        case '/poetry':
+            return printPoetry();
+        case '/beats':
+            return printBeats();
+        case '/street':
+            return printBeats();
+        case '/':
+            return printIndex();
+    }
+}
+// Get the current location
+const history = createHistory();
+// Listen for changes to the current location
+const unlisten = history.listen(location => {
+    routes(location)
+})
+routes(history.getCurrentLocation().path)
 
 

@@ -1,26 +1,16 @@
 
 
 html, body {
-    height: 100%;
     margin: 0;
     // background: url('assets/IMG_5820.jpg');
+}
+body {
+    height: 100%;
     background-size: cover;
     background-color: rgb(252, 249, 236);
-
+    font-family: 'Roboto Mono';
+    padding: 0 20px;
 }
-
-.background {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    right: 0;
-}
-.background__svg {
-    width: 100%;
-    height: 100%;
-}
-
 .brand-container {
     position: absolute;
     top: 0;
@@ -33,20 +23,33 @@ html, body {
     height: 100%;
 }
 
-.brand-logo {
-    height: 200px;
-    width: 200px;
+
+#logo {
+    position: relative;
+    height: 100px;
+    padding: 100px;
+    width: 100px;
 }
-.brand-logo svg {
-    overflow: visible;
+.brand-text {
+    position: relative;
+    top: -60px;
+    font-size: 20px;
+    opacity: 0;
+}
+.logo-container {
+    position: absolute;
+    top: 100px;
+    bottom: 100px;
+    right: 100px;
+    left: 100px;
+    transform: scale(2);
 }
 
+.logo-container:hover .A-logo {
+    fill: rgba(255,170,0,1);
+}
 
 .A-logo {
     fill: rgb(114, 143, 219);
     transition: fill 0.2s;
-}
-
-.A-logo:hover {
-    fill: rgba(255,170,0,1);
 }
