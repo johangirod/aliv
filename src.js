@@ -27,7 +27,7 @@ logoSpring.addListener({
         drawLogo(val);
         [...brandLogo].forEach(el => {
             el.style.opacity =  max(0, val * 1.5 - 0.5)
-            el.style.transform = `translate(0px, ${-val*100}px)`
+            el.style.transform = `translate(0px, ${-(val-1)*50}px)`
         });
     }
 });

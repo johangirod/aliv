@@ -10827,7 +10827,7 @@ logoSpring.addListener({
         drawLogo(val);
         [].concat(_toConsumableArray(brandLogo)).forEach(function (el) {
             el.style.opacity = (0, _ramda.max)(0, val * 1.5 - 0.5);
-            el.style.transform = 'translate(0px, ' + -val * 100 + 'px)';
+            el.style.transform = 'translate(0px, ' + -(val - 1) * 50 + 'px)';
         });
     }
 });
