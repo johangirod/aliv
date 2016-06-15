@@ -1,7 +1,6 @@
 window.trace = (...logs) => (x) => console.log(...logs, x) || x;
 import { SpringSystem, MathUtil } from 'rebound';
 import { max } from 'ramda';
-import createHistory from 'history/lib/createHashHistory'
 
 const drawLogo = val => {
     const trans = val * 50;
@@ -32,15 +31,6 @@ logoSpring.addListener({
     }
 });
 
-
-[...document.getElementsByClassName('menu-link')].forEach(el => {
-    el.addEventListener('click', e => {
-        e.preventDefault();
-        history.push({
-            pathname: el.attributes.href.value
-        })
-    })
-})
 
 function printDesign() {
     document.getElementById('design').class = 'show'
