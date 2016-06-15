@@ -10846,26 +10846,4 @@ function printDesign() {
     document.getElementsByClassName('brand-container').item(0).style.position = 'initial';
 }
 
-function routes(path) {
-    switch (routes) {
-        case '/design':
-            return printDesign();
-        case '/poetry':
-            return printPoetry();
-        case '/beats':
-            return printBeats();
-        case '/street':
-            return printBeats();
-        case '/':
-            return printIndex();
-    }
-}
-// Get the current location
-var history = (0, _createHashHistory2.default)();
-// Listen for changes to the current location
-var unlisten = history.listen(function (location) {
-    routes(location);
-});
-routes(history.getCurrentLocation().path);
-
 },{"history/lib/createHashHistory":10,"ramda":15,"rebound":16}]},{},[18]);

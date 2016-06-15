@@ -46,27 +46,3 @@ function printDesign() {
     document.getElementById('design').class = 'show'
     document.getElementsByClassName('brand-container').item(0).style.position = 'initial';
 }
-
-function routes(path) {
-    switch (routes) {
-        case '/design':
-            return printDesign();
-        case '/poetry':
-            return printPoetry();
-        case '/beats':
-            return printBeats();
-        case '/street':
-            return printBeats();
-        case '/':
-            return printIndex();
-    }
-}
-// Get the current location
-const history = createHistory();
-// Listen for changes to the current location
-const unlisten = history.listen(location => {
-    routes(location)
-})
-routes(history.getCurrentLocation().path)
-
-
